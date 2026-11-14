@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendSystemPromptOnce } from "../lib/append-system-prompt.ts";
 import { filterChildSessionContextFiles, type ContextFileOptions } from "../lib/child-context-files.ts";
+import { orcaStackPanelControl, type OrcaStackPanelControl } from "../lib/orca-stack-toggle.ts";
 import { dataArgumentRanges, recognizeDestructiveCommands } from "../lib/destructive-command-guard.ts";
 import { defaultTempScratchFs, isTempScratchRemoval, type TempScratchFs } from "../lib/yolo-temp-scratch.ts";
 import { SHELL_COMMAND_TOOLS } from "../lib/background-jobs.ts";
@@ -4200,6 +4201,9 @@ class RoutingTablePanel implements OverlayComponent {
 	private pickingFallback = false;
 	private fallbackCursor = 0;
 	private readonly fallbacks: RoutingFallbacks | undefined;
+	/** Fork: the per-project orca-stack toggle (`o`), present only in an orca-stack project. */
+	private readonly orcaStack: OrcaStackPanelControl | undefined;
+	private orcaStackState: "on" | "off" | undefined;
 	private target: string = PROFILE_ORCHESTRATOR_KEY;
 	private pending: RoutingTableResult | undefined;
 	private cursor = 0;
@@ -4254,10 +4258,13 @@ class RoutingTablePanel implements OverlayComponent {
 			switchProfile?: RoutingProfileSwitcher;
 			fallbacks?: RoutingFallbacks;
 			modeDraft?: OrchestratorMode;
+			orcaStack?: OrcaStackPanelControl;
 		} = {},
 	) {
 		this.switchProfile = options.switchProfile;
 		this.fallbacks = options.fallbacks;
+		this.orcaStack = options.orcaStack;
+		this.orcaStackState = options.orcaStack?.read();
 		this.thinkingSupport = options.thinkingSupport ?? {};
 		this.fastModels = new Set(options.fastModels ?? []);
 		this.notices = options.notices ?? [];
@@ -4618,6 +4625,14 @@ class RoutingTablePanel implements OverlayComponent {
 		this.say(`Orchestrator mode ${this.modeDraft}. Save keeps it in ${this.profileName}.`);
 	}
 
+	/** Fork: `o` stores the project's orca-stack choice at once; it is not a profile draft. */
+	private toggleOrcaStack(control: OrcaStackPanelControl): void {
+		const next = this.orcaStackState === "off" ? "on" : "off";
+		const error = control.write(next);
+		if (error === undefined) this.orcaStackState = next;
+		this.say(error ?? `orca-stack ${next} for this project: the next turn ${next === "off" ? "drops" : "loads"} the orca-stack contract.`);
+	}
+
 	private setAllFast(): void {
 		let count = 0;
 		for (const key of [PROFILE_ORCHESTRATOR_KEY, ...this.agents]) {
@@ -4810,6 +4825,7 @@ class RoutingTablePanel implements OverlayComponent {
 		if (matchesKey(data, "f")) return this.openFallbacks(this.rows[this.cursor] ?? PROFILE_ORCHESTRATOR_KEY);
 		if (matchesKey(data, "t")) return this.toggleTier(this.rows[this.cursor] ?? PROFILE_ORCHESTRATOR_KEY);
 		if (matchesKey(data, "w")) return this.toggleOrchestratorMode();
+		if (matchesKey(data, "o") && this.orcaStack) return this.toggleOrcaStack(this.orcaStack);
 		if (matchesKey(data, "a")) return this.setAllFast();
 		if (matchesKey(data, "s") || matchesKey(data, "ctrl+s")) return this.pressButton("save");
 		if (matchesKey(data, "u")) return this.pressButton("use");
@@ -5204,14 +5220,16 @@ class RoutingTablePanel implements OverlayComponent {
 		const budget = inner - 1;
 		const chosen = new Set<number>();
 		let used = 0;
-		const byPriority = ROUTING_TABLE_HINTS.map((hint, index) => ({ ...hint, index })).sort((a, b) => a.keep - b.keep);
+		// Fork: an orca-stack project adds its toggle's state; it outranks every other hint.
+		const hints = this.orcaStack ? [...ROUTING_TABLE_HINTS, { text: `o orca-stack: ${this.orcaStackState}`, keep: 0 }] : ROUTING_TABLE_HINTS;
+		const byPriority = hints.map((hint, index) => ({ ...hint, index })).sort((a, b) => a.keep - b.keep);
 		for (const hint of byPriority) {
 			const cost = visibleWidth(hint.text) + (chosen.size > 0 ? 2 : 0);
 			if (used + cost > budget) continue;
 			chosen.add(hint.index);
 			used += cost;
 		}
-		return ` ${ROUTING_TABLE_HINTS.filter((_, index) => chosen.has(index)).map((hint) => hint.text).join("  ")}`;
+		return ` ${hints.filter((_, index) => chosen.has(index)).map((hint) => hint.text).join("  ")}`;
 	}
 
 	/**
@@ -5554,6 +5572,7 @@ function renderRoutingTableForTesting(
 		fastModels?: string[];
 		notices?: string[];
 		fallbacks?: RoutingFallbacks;
+		orcaStack?: OrcaStackPanelControl;
 	} = {},
 ): string[] {
 	const panel = new RoutingTablePanel(
@@ -5712,6 +5731,7 @@ async function showRoutingTablePanel(
 					switchProfile: request.switchProfile,
 					fallbacks: fileRoutingFallbacks(gentleAiConfigHome()),
 					modeDraft: request.modeDraft,
+					orcaStack: orcaStackPanelControl(ctx.sessionManager?.getCwd?.() ?? ctx.cwd),
 				},
 			);
 			const container = createNativeFullscreenInteraction({

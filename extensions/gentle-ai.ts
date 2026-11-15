@@ -316,6 +316,7 @@ import { AutoPermissionRuntime, updateAutoPrompt, type AutoRuntimeClassifier } f
 import { AutoPermissionClassifier } from "../lib/auto-permission-classifier.ts";
 import { acquireChildStandingReviewPermissionClient, type ChildStandingReviewPermissionClient } from "../lib/review-session-standing-permission-ipc.ts";
 import { isPiConsentV3, presentReviewConsentUi } from "../lib/review-consent-ui.ts";
+import { ORCA_STACK_CONSENT_ANSWERED, readOrcaStackConsentPolicy } from "../lib/review-consent-policy.ts";
 import {
 	captureReviewSessionIdentity,
 	grantReviewSessionPermission,
@@ -12665,10 +12666,16 @@ function createGentleAiExtensionForTesting(
 					// The successful native operation above remains authoritative; an
 					// unresolvable local binding simply cannot consume host permission.
 				}
-				const initialIdentity = permissionWorkspaceRoot === undefined
+				// odd/tasks/orca-main-autonomo.md G2: in a linked worktree with an
+				// orca-stack consent policy file, the policy answers instead of the
+				// UI or the parent relay, through the same native answer path.
+				const orcaStackPolicy = eligiblePending === undefined ? undefined : await readOrcaStackConsentPolicy(eligiblePending.authorityCwd);
+				const initialIdentity = orcaStackPolicy !== undefined || permissionWorkspaceRoot === undefined
 					? undefined
 					: await capturePermissionIdentity(ctx, permissionWorkspaceRoot);
-				if (eligiblePending !== undefined && initialIdentity === undefined) {
+				if (eligiblePending !== undefined && orcaStackPolicy !== undefined) {
+					details = { ...(await answerPendingConsent(orcaStackPolicy.answer)), consentAnsweredBy: ORCA_STACK_CONSENT_ANSWERED(orcaStackPolicy.answer, orcaStackPolicy.path) };
+				} else if (eligiblePending !== undefined && initialIdentity === undefined) {
 					// A package child has no local standing grant. It may ask its
 					// inherited parent only for the canonical repository identity of
 					// this exact pending target, then replay this local binding once.

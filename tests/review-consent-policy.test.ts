@@ -56,6 +56,12 @@ test("G2: a linked worktree's policy file answers; the main checkout is never re
 	assert.equal((await readOrcaStackConsentPolicy(join(linked, "sub")))?.answer, "declined", "a nested cwd reads its worktree's file");
 	write(linkedGitDir, { version: 1, granted: [head] });
 	assert.equal((await readOrcaStackConsentPolicy(linked))?.answer, "granted");
+	writeFileSync(join(linked, ".orca-stack.json"), JSON.stringify({ agentes: { pi: { rddConsentimiento: "humano" } } }));
+	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "rddConsentimiento humano keeps the human's answer even with a policy file");
+	writeFileSync(join(linked, ".orca-stack.json"), "{broken");
+	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "an unreadable .orca-stack.json keeps today's behaviour");
+	writeFileSync(join(linked, ".orca-stack.json"), JSON.stringify({ agentes: { pi: { rddConsentimiento: "politica" } } }));
+	assert.equal((await readOrcaStackConsentPolicy(linked))?.answer, "granted", "politica lets the file answer");
 	write(linkedGitDir, "{broken");
 	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "invalid JSON keeps today's behaviour");
 	write(linkedGitDir, { version: 9, granted: [head] });

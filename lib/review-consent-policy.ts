@@ -44,6 +44,17 @@ function revParse(cwd: string): Promise<{ toplevel: string; gitDir: string; head
 	});
 }
 
+async function humanKeepsConsent(toplevel: string): Promise<boolean> {
+	let text: string;
+	try { text = await readFile(join(toplevel, ".orca-stack.json"), "utf8"); } catch (error) {
+		return (error as NodeJS.ErrnoException).code !== "ENOENT";
+	}
+	try {
+		const config = JSON.parse(text) as { agentes?: { pi?: { rddConsentimiento?: unknown } } };
+		return config?.agentes?.pi?.rddConsentimiento === "humano";
+	} catch { return true; }
+}
+
 /** The policy answer for the worktree holding `cwd`, or undefined to keep today's behaviour. Never throws. */
 export async function readOrcaStackConsentPolicy(cwd: string): Promise<OrcaStackConsentPolicy | undefined> {
 	try {
@@ -51,6 +62,9 @@ export async function readOrcaStackConsentPolicy(cwd: string): Promise<OrcaStack
 		if (git === undefined) return undefined;
 		// Only a linked worktree (its `.git` is a file) carries a per-worktree policy.
 		if (!(await lstat(join(git.toplevel, ".git"))).isFile()) return undefined;
+		// The repo can keep the answer with the human: agentes.pi.rddConsentimiento "humano" (or a config that
+		// cannot be read) wins over any policy file, so a file the agent wrote itself cannot answer for the human.
+		if (await humanKeepsConsent(git.toplevel)) return undefined;
 		const path = join(git.gitDir, "orca-stack", "rdd-consentimiento.json");
 		const answer = decideOrcaStackConsent(await readFile(path, "utf8"), git.head);
 		return answer === undefined ? undefined : { answer, head: git.head, path };

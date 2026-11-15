@@ -21,7 +21,7 @@ Recognizable scheduling and exported routing are checked as follows:
 
 An orca-stack `main` session merges PRs that other agents wrote and that orca-stack already counts as reviewed; it has no local committed range for them (`odd/tasks/orca-main-autonomo.md` G1). With RDD on, a command is allowed without the committed-range assessment only when all of these hold:
 
-- its only delivery or candidate-changing action is `gh pr merge <n> (--merge|--squash|--rebase) --match-head-commit <40-hex sha> [--delete-branch]`, run as a single foreground `bash` command (optionally after a literal leading `cd <dir> &&`), with no assignment, wrapper, `sh -c`/`eval`, substitution or following command;
+- its only delivery or candidate-changing action is `gh pr merge <n> (--merge|--squash|--rebase) --match-head-commit <40-hex sha>` (no `--delete-branch`/`-d`: deleting the remote branch stays with the human), run as a single foreground `bash` command (optionally after a literal leading `cd <dir> &&`), with no assignment, wrapper, `sh -c`/`eval`, substitution or following command;
 - no other argument appears: `--admin`, `--auto`, `-R`/`--repo` (also as a `gh` global flag) and any other flag disqualify it;
 - the repository root holds `.orca-stack.json`;
 - the guard itself runs `orca-stack estado <n> --json` in that root (fixed argument vector, no shell; on Windows an `orca-stack.cmd` shim is resolved to its Node script; 25 s timeout inside a 30 s preflight bound), it exits 0, and its output is one JSON object whose `pr` is `<n>`, whose `ok` is `true` and whose `head` equals the `--match-head-commit` sha, compared case-insensitively.

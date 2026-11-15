@@ -487,7 +487,7 @@ test("G1: an attested, head-pinned gh pr merge in an orca-stack root is allowed 
 	const fixture = attestationFixture(t);
 	for (const command of [
 		`gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`,
-		`gh pr merge 42 --merge --match-head-commit ${ATTESTED_HEAD.toUpperCase()} --delete-branch`,
+		`gh pr merge 42 --merge --match-head-commit ${ATTESTED_HEAD.toUpperCase()}`,
 		`gh pr merge 42 --rebase --match-head-commit=${ATTESTED_HEAD}`,
 		`cd "${fixture.root}" && gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`,
 	]) {
@@ -506,6 +506,8 @@ test("G1 negatives: every failed attestation stays denied by the existing rules 
 		["gh pr merge 42 --match-head-commit " + ATTESTED_HEAD, /--merge, --squash or --rebase/],
 		[`gh pr merge 42 --squash --admin --match-head-commit ${ATTESTED_HEAD}`, /--admin/],
 		[`gh pr merge 42 --squash --auto --match-head-commit ${ATTESTED_HEAD}`, /--auto/],
+		[`gh pr merge 42 --squash --delete-branch --match-head-commit ${ATTESTED_HEAD}`, /--delete-branch is not allowed: it deletes the remote branch/],
+		[`gh pr merge 42 --squash -d --match-head-commit ${ATTESTED_HEAD}`, /--delete-branch is not allowed: it deletes the remote branch/],
 		[`gh pr merge 42 --squash -R owner/repo --match-head-commit ${ATTESTED_HEAD}`, /-R/],
 		[`gh pr merge 42 --squash --repo owner/repo --match-head-commit ${ATTESTED_HEAD}`, /--repo/],
 		[`gh -R owner/repo pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`, /-R/],

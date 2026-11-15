@@ -97,7 +97,7 @@ function attestableMerge(merge: ReviewDeliveryMerge): { pr: number; head: string
 		const arg = rest[index];
 		if (/^\d+$/.test(arg) && number === undefined) number = arg;
 		else if (MERGE_METHODS.has(arg)) methods++;
-		else if (arg === "--delete-branch" || arg === "-d") continue;
+		else if (arg === "--delete-branch" || arg === "-d") return "--delete-branch is not allowed: it deletes the remote branch, which needs the human";
 		else if (arg === "--match-head-commit" && head === undefined && index + 1 < rest.length) head = rest[++index];
 		else if (arg.startsWith("--match-head-commit=") && head === undefined) head = arg.slice("--match-head-commit=".length);
 		else if (["--admin", "--auto", "-R", "--repo"].includes(arg) || /^--(?:admin|auto|repo)=/.test(arg)) return `${arg.split("=")[0]} is not allowed`;

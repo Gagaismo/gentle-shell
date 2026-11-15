@@ -6,8 +6,8 @@
 // layer) and exists only where `<worktree-root>/.orca-stack.json` exists. Only
 // the injected context is filtered; every file on disk keeps its blocks.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ContextFile, ContextFileOptions, ManagedBlockFilterResult } from "./child-context-files.ts";
 
 export type OrcaStackChoice = "on" | "off";
@@ -137,13 +137,44 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The stored choice; undefined when not an orca-stack project, not chosen, unreadable, or not "on"/"off" (S5). */
+/**
+ * The main checkout of a linked worktree root (its `.git` is a file), following
+ * the `gitdir:` file and the worktree's `commondir`; undefined otherwise.
+ */
+function mainWorktreeOf(root: string): string | undefined {
+	const dotGit = join(root, ".git");
+	if (!statSync(dotGit).isFile()) return undefined;
+	const pointer = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"))?.[1];
+	if (pointer === undefined) return undefined;
+	const gitDir = resolve(root, pointer);
+	const commonDir = resolve(gitDir, readFileSync(join(gitDir, "commondir"), "utf8").trim());
+	if (basename(commonDir) !== ".git") return undefined;
+	const main = dirname(commonDir);
+	return main === root ? undefined : main;
+}
+
+/** The `gentleShell` value of one local file: absent (no file or no key), or the raw value. */
+function readLocalChoice(path: string): { present: false } | { present: true; value: unknown } {
+	if (!existsSync(path)) return { present: false };
+	const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+	if (isPlainObject(parsed) && !(ORCA_STACK_CHOICE_KEY in parsed)) return { present: false };
+	return { present: true, value: isPlainObject(parsed) ? parsed[ORCA_STACK_CHOICE_KEY] : undefined };
+}
+
+/**
+ * The stored choice; undefined when not an orca-stack project, not chosen, unreadable, or not "on"/"off" (S5).
+ * A linked worktree without the file or the key reads the main checkout's file (orca-main-autonomo G3).
+ */
 export function readOrcaStackChoice(cwd: string): OrcaStackChoice | undefined {
 	try {
 		const path = orcaStackLocalPath(cwd);
-		if (path === undefined || !existsSync(path)) return undefined;
-		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-		const value = isPlainObject(parsed) ? parsed[ORCA_STACK_CHOICE_KEY] : undefined;
+		if (path === undefined) return undefined;
+		let choice = readLocalChoice(path);
+		if (!choice.present) {
+			const main = mainWorktreeOf(dirname(path));
+			if (main !== undefined) choice = readLocalChoice(join(main, ORCA_STACK_LOCAL_FILE));
+		}
+		const value = choice.present ? choice.value : undefined;
 		return value === "on" || value === "off" ? value : undefined;
 	} catch {
 		return undefined;

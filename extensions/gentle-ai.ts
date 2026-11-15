@@ -11,7 +11,7 @@ import { defaultTempScratchFs, isTempScratchRemoval, type TempScratchFs } from "
 import { SHELL_COMMAND_TOOLS } from "../lib/background-jobs.ts";
 import { evaluateDeliveredTestTool } from "../lib/delivered-test-lint.ts";
 import { commitSliceToolResult } from "../lib/commit-slice-signal.ts";
-import { checkReviewDeliveryPreflight, committedRangeUntrackedExclusion } from "../lib/review-delivery-preflight.ts";
+import { checkReviewDeliveryPreflight, committedRangeUntrackedExclusion, runOrcaStackEstado } from "../lib/review-delivery-preflight.ts";
 import { withReviewerProgress } from "../lib/reviewer-stream.ts";
 import { checkDeliveryConflictMarkers } from "../lib/delivery-conflict-markers.ts";
 import { appendContextBackstopNotice, createContextBackstopSignal, createThrottledContextMeasure } from "../lib/context-backstop.ts";
@@ -13287,7 +13287,9 @@ function createGentleAiExtensionForTesting(
 		const deliveryDenied = await checkReviewDeliveryPreflight(ctx.cwd, event.toolName, command, nativeReviewCli,
 			root => processRetainedNativeStatusSelections.get(sessionKey)?.readCommittedRange(root),
 			(root, target) => readNativeReviewOutcome(root, target) === "declined", ctx.signal,
-			() => deliveryEpoch === reminderEpoch && modeEpoch === yolo.epoch() && pendingReviewConsentSessionKey(ctx, pendingReviewConsentFallbackKey) === sessionKey);
+			() => deliveryEpoch === reminderEpoch && modeEpoch === yolo.epoch() && pendingReviewConsentSessionKey(ctx, pendingReviewConsentFallbackKey) === sessionKey,
+			// odd/tasks/orca-main-autonomo.md G1: the guard itself asks orca-stack for the merge attestation.
+			(root, pr, attestSignal) => runOrcaStackEstado(root, pr, attestSignal));
 		// cost-speed P9: after the RDD preflight (its denials win unchanged), independent of RDD mode; fails open.
 		// It runs BEFORE the epoch recheck below: no await may sit between that recheck and the return.
 		const markerDenied = !deliveryDenied && primaryToolCall ? await checkDeliveryConflictMarkers(ctx.cwd, command, ctx.signal) : undefined;

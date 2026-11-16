@@ -37,6 +37,17 @@ test("G2 decision negatives: invalid JSON, wrong version or shape fall back to t
 	assert.equal(decideOrcaStackConsent(JSON.stringify({ version: 1, granted: [HEAD] }), "not-a-sha"), undefined, "an unknown HEAD never answers");
 });
 
+// The committed opt-in lives on origin's default branch: a commit (never checked out) whose .orca-stack.json is
+// `config`, pointed to by refs/remotes/origin/main, as a fetch would leave it.
+function optIn(repo: string, config: unknown): void {
+	const run = (args: string[], input?: string) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false", ...args], { cwd: repo, encoding: "utf8", input }).trim();
+	const blob = run(["hash-object", "-w", "--stdin"], typeof config === "string" ? config : JSON.stringify(config));
+	const tree = run(["mktree"], `100644 blob ${blob}	.orca-stack.json
+`);
+	const commit = run(["commit-tree", tree, "-m", "config"]);
+	run(["update-ref", "refs/remotes/origin/main", commit]);
+}
+
 test("G2: a linked worktree's policy file answers; the main checkout is never read", async t => {
 	const scratch = realpathSync(mkdtempSync(join(tmpdir(), "review-consent-policy-")));
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -51,17 +62,20 @@ test("G2: a linked worktree's policy file answers; the main checkout is never re
 
 	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "no file keeps today's behaviour");
 	write(linkedGitDir, { version: 1, granted: [] });
-	assert.deepEqual(await readOrcaStackConsentPolicy(linked), { answer: "declined", head, path: join(linkedGitDir, "orca-stack", "rdd-consentimiento.json") });
+	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "no committed opt-in on origin: a policy file alone never answers");
+	writeFileSync(join(linked, ".orca-stack.json"), JSON.stringify({ agentes: { pi: { rddConsentimiento: "politica" } } }));
+	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "the worktree's own (agent-writable) .orca-stack.json opts nothing in");
+	optIn(main, { agentes: { pi: { rddConsentimiento: "humano" } } });
+	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "origin's committed humano keeps the dialog, whatever the local file says");
+	optIn(main, "{broken");
+	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "an unreadable committed config keeps the dialog");
+	optIn(main, { agentes: { pi: { rddConsentimiento: "politica" } } });
+	writeFileSync(join(linked, ".orca-stack.json"), JSON.stringify({ agentes: { pi: { rddConsentimiento: "humano" } } }));
+	assert.deepEqual(await readOrcaStackConsentPolicy(linked), { answer: "declined", head, path: join(linkedGitDir, "orca-stack", "rdd-consentimiento.json") }, "origin's committed politica answers; local edits do not change it");
 	mkdirSync(join(linked, "sub"), { recursive: true });
 	assert.equal((await readOrcaStackConsentPolicy(join(linked, "sub")))?.answer, "declined", "a nested cwd reads its worktree's file");
 	write(linkedGitDir, { version: 1, granted: [head] });
 	assert.equal((await readOrcaStackConsentPolicy(linked))?.answer, "granted");
-	writeFileSync(join(linked, ".orca-stack.json"), JSON.stringify({ agentes: { pi: { rddConsentimiento: "humano" } } }));
-	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "rddConsentimiento humano keeps the human's answer even with a policy file");
-	writeFileSync(join(linked, ".orca-stack.json"), "{broken");
-	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "an unreadable .orca-stack.json keeps today's behaviour");
-	writeFileSync(join(linked, ".orca-stack.json"), JSON.stringify({ agentes: { pi: { rddConsentimiento: "politica" } } }));
-	assert.equal((await readOrcaStackConsentPolicy(linked))?.answer, "granted", "politica lets the file answer");
 	write(linkedGitDir, "{broken");
 	assert.equal(await readOrcaStackConsentPolicy(linked), undefined, "invalid JSON keeps today's behaviour");
 	write(linkedGitDir, { version: 9, granted: [head] });
@@ -140,6 +154,7 @@ test("G2 host: the policy answers instead of the dialog, through the same native
 	const head = git(linked, "rev-parse", "HEAD");
 	const policy = (gitDir: string, granted: string[]) => { mkdirSync(join(gitDir, "orca-stack"), { recursive: true }); writeFileSync(join(gitDir, "orca-stack", "rdd-consentimiento.json"), JSON.stringify({ version: 1, granted })); };
 
+	optIn(main, { agentes: { pi: { rddConsentimiento: "politica" } } });
 	policy(git(linked, "rev-parse", "--absolute-git-dir"), []);
 	const declinedRun = harness(linked);
 	const declined = await declinedRun.start();

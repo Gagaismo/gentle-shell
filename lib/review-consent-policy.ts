@@ -3,8 +3,10 @@
 // asking the human. orca-stack writes
 // `<per-worktree git dir>/orca-stack/rdd-consentimiento.json` =
 // `{"version":1,"granted":["<sha>",...]}`; the answer is `granted` when the
-// worktree HEAD is listed, else `declined`. Any other content, a missing file,
-// or the main checkout (`.git` as a directory) leaves today's behaviour.
+// worktree HEAD is listed, else `declined`. It applies only when the config
+// committed on origin's default branch opts in (see optedIn). Any other
+// content, a missing file, or the main checkout (`.git` as a directory) leaves
+// today's behaviour.
 
 import { execFile } from "node:child_process";
 import { lstat, readFile } from "node:fs/promises";
@@ -44,15 +46,32 @@ function revParse(cwd: string): Promise<{ toplevel: string; gitDir: string; head
 	});
 }
 
-async function humanKeepsConsent(toplevel: string): Promise<boolean> {
-	let text: string;
-	try { text = await readFile(join(toplevel, ".orca-stack.json"), "utf8"); } catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ENOENT";
+// Opt-in (review R1): the policy answers only when the config committed on origin's default branch says
+// agentes.pi.rddConsentimiento "politica". The worktree's own .orca-stack.json and the policy file are writable by
+// the worker, so they never opt in; changing origin's branch takes a guarded push and a PR. Any other value, a
+// missing ref or file, or JSON that does not parse keeps the dialog.
+const OPT_IN_REFS = ["refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master"];
+
+function committedConfig(cwd: string, ref: string): Promise<string | undefined> {
+	return new Promise(done => {
+		try {
+			execFile("git", ["show", `${ref}:.orca-stack.json`],
+				{ cwd, encoding: "utf8", timeout: 2_000, maxBuffer: 256 * 1024, windowsHide: true, env: worktreeGitEnvironment() },
+				(error, stdout) => done(error ? undefined : String(stdout ?? "")));
+		} catch { done(undefined); }
+	});
+}
+
+async function optedIn(cwd: string): Promise<boolean> {
+	for (const ref of OPT_IN_REFS) {
+		const text = await committedConfig(cwd, ref);
+		if (text === undefined) continue;
+		try {
+			const config = JSON.parse(text) as { agentes?: { pi?: { rddConsentimiento?: unknown } } };
+			return config?.agentes?.pi?.rddConsentimiento === "politica";
+		} catch { return false; }
 	}
-	try {
-		const config = JSON.parse(text) as { agentes?: { pi?: { rddConsentimiento?: unknown } } };
-		return config?.agentes?.pi?.rddConsentimiento === "humano";
-	} catch { return true; }
+	return false;
 }
 
 /** The policy answer for the worktree holding `cwd`, or undefined to keep today's behaviour. Never throws. */
@@ -62,9 +81,7 @@ export async function readOrcaStackConsentPolicy(cwd: string): Promise<OrcaStack
 		if (git === undefined) return undefined;
 		// Only a linked worktree (its `.git` is a file) carries a per-worktree policy.
 		if (!(await lstat(join(git.toplevel, ".git"))).isFile()) return undefined;
-		// The repo can keep the answer with the human: agentes.pi.rddConsentimiento "humano" (or a config that
-		// cannot be read) wins over any policy file, so a file the agent wrote itself cannot answer for the human.
-		if (await humanKeepsConsent(git.toplevel)) return undefined;
+		if (!(await optedIn(git.toplevel))) return undefined;
 		const path = join(git.gitDir, "orca-stack", "rdd-consentimiento.json");
 		const answer = decideOrcaStackConsent(await readFile(path, "utf8"), git.head);
 		return answer === undefined ? undefined : { answer, head: git.head, path };

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -310,4 +311,50 @@ test("the hooks never throw on missing context or options", async () => {
 	await assert.doesNotReject(async () => handlers.get("session_start")!({}, {}));
 	await assert.doesNotReject(async () => handlers.get("before_agent_start")!({}, {}));
 	await assert.doesNotReject(async () => handlers.get("before_agent_start")!({ systemPromptOptions: null }, { cwd: project({ local: '{"gentleShell":"off"}' }).cwd }));
+});
+
+// --- odd/tasks/orca-main-autonomo.md G3: a linked worktree reads the main checkout's choice
+
+function linkedWorktree(options: { main?: string; linked?: string } = {}): { main: string; linked: string; cwd: string } {
+	const base = join(scratch, `w${fixtureCount++}`);
+	const main = join(base, "main"), linked = join(base, "linked");
+	mkdirSync(main, { recursive: true });
+	const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false", ...args], { cwd, stdio: "ignore" });
+	git(main, "init", "-q");
+	writeFileSync(join(main, ".orca-stack.json"), "{}\n");
+	git(main, "add", ".orca-stack.json"); git(main, "commit", "-qm", "base");
+	git(main, "worktree", "add", "-q", "-b", `worker${fixtureCount}`, linked);
+	if (options.main !== undefined) writeFileSync(join(main, ".orca-stack.local.json"), options.main);
+	if (options.linked !== undefined) writeFileSync(join(linked, ".orca-stack.local.json"), options.linked);
+	const cwd = join(linked, "packages", "app");
+	mkdirSync(cwd, { recursive: true });
+	return { main, linked, cwd };
+}
+
+test("G3 example: a linked worktree without the file uses the main checkout's choice, and the picker stays closed", async () => {
+	const { cwd, linked } = linkedWorktree({ main: '{"gentleShell":"on"}' });
+	assert.equal(readOrcaStackChoice(cwd), "on");
+	assert.equal(readOrcaStackChoice(linked), "on");
+	const handlers = hooks();
+	const { ctx, asked } = uiContext(cwd, [ORCA_STACK_OPTIONS.off]);
+	await handlers.get("session_start")!({ type: "session_start", reason: "startup" }, ctx);
+	assert.deepEqual(await turn(handlers, ctx), [CONTRACT_AGENTS_MD]);
+	assert.equal(asked.length, 0, "no picker");
+	assert.equal(readOrcaStackChoice(linkedWorktree({ main: '{"gentleShell":"off"}', linked: '{"provider":"claude"}' }).cwd), "off", "a local file without gentleShell falls back too");
+});
+
+test("G3: the worktree's own choice wins over the main checkout's", () => {
+	assert.equal(readOrcaStackChoice(linkedWorktree({ main: '{"gentleShell":"on"}', linked: '{"gentleShell":"off"}' }).cwd), "off");
+	assert.equal(readOrcaStackChoice(linkedWorktree({ main: '{"gentleShell":"off"}', linked: '{"gentleShell":"on"}' }).cwd), "on");
+});
+
+test("G3 negative: neither file has the choice, so the picker shows as today", async () => {
+	for (const options of [{}, { main: '{"provider":"claude"}' }, { main: "{broken" }, { main: '{"gentleShell":"OFF"}' }]) {
+		const { cwd } = linkedWorktree(options);
+		assert.equal(readOrcaStackChoice(cwd), undefined, JSON.stringify(options));
+		const { ctx, asked } = uiContext(cwd, [undefined]);
+		await hooks().get("session_start")!({ type: "session_start", reason: "startup" }, ctx);
+		assert.equal(asked.length, 1, JSON.stringify(options));
+	}
+	assert.equal(readOrcaStackChoice(project({ gitFile: true }).cwd), undefined, "a broken gitdir chain reads as not chosen and never throws");
 });

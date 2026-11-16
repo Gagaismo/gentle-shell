@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createGentleAiExtension } from "../extensions/gentle-ai.ts";
-import { checkReviewDeliveryPreflight } from "../lib/review-delivery-preflight.ts";
+import { checkReviewDeliveryPreflight, runOrcaStackEstado, type OrcaStackAttest } from "../lib/review-delivery-preflight.ts";
 import { recognizeReviewDeliveryActions } from "../lib/destructive-command-guard.ts";
 import { ReviewContinuationRegistry } from "../lib/review-continuation-registry.ts";
 import { NativeReviewCliV216, type NativeReviewCli } from "../lib/native-review-cli.ts";
@@ -459,4 +459,138 @@ test("#3169: the real native client sends the exclusion flags with the status in
 	assert.equal(result?.block, true);
 	assert.match(result!.reason, /Session changed during preflight/);
 	assert.equal(assessArgs.length, 0, "no assessment runs after the session changed");
+});
+
+// odd/tasks/orca-main-autonomo.md G1: orca-stack attestation for an
+// already-reviewed `gh pr merge` with a pinned head.
+const ATTESTED_HEAD = "0123456789abcdef0123456789abcdef01234567";
+const OTHER_HEAD = "fedcba9876543210fedcba9876543210fedcba98";
+
+function attestationFixture(t: { after: (fn: () => void) => void }, options: { orca?: boolean } = {}) {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "review-delivery-attest-")));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	if (options.orca !== false) writeFileSync(join(root, ".orca-stack.json"), "{}\n");
+	let assessments = 0;
+	const cli = {
+		reviewMode: async () => ({ status: { effective: "on" } }),
+		assess: async ({ baseRef }: { baseRef: string }) => { assessments++; return { candidate: { kind: "base-diff", baseRef }, reviewDue: true }; },
+	} as unknown as NativeReviewCli;
+	const calls: Array<{ root: string; pr: number }> = [];
+	let answer: Awaited<ReturnType<OrcaStackAttest>> = { exitCode: 0, stdout: JSON.stringify({ pr: 42, head: ATTESTED_HEAD, ok: true, falta: [], merge: "main mergea sola" }) };
+	const attest: OrcaStackAttest = async (where, pr) => { calls.push({ root: where, pr }); return answer; };
+	const check = (command: string, toolName = "bash") => checkReviewDeliveryPreflight(root, toolName, command, cli, () => undefined, () => false, undefined, () => true, attest);
+	return { root, calls, check, assessments: () => assessments, answer: (next: typeof answer) => { answer = next; } };
+}
+
+test("G1: an attested, head-pinned gh pr merge in an orca-stack root is allowed without a local range", async t => {
+	const fixture = attestationFixture(t);
+	for (const command of [
+		`gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`,
+		`gh pr merge 42 --merge --match-head-commit ${ATTESTED_HEAD.toUpperCase()}`,
+		`gh pr merge 42 --rebase --match-head-commit=${ATTESTED_HEAD}`,
+		`cd "${fixture.root}" && gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`,
+	]) {
+		assert.equal(await fixture.check(command), undefined, command);
+	}
+	assert.deepEqual(fixture.calls.map(call => call.pr), [42, 42, 42, 42]);
+	assert.ok(fixture.calls.every(call => call.root === fixture.root), "estado runs in the orca-stack root");
+	assert.equal(fixture.assessments(), 0, "the attestation replaces the local-candidate assessment for this merge only");
+});
+
+test("G1 negatives: every failed attestation stays denied by the existing rules and says why", async t => {
+	const fixture = attestationFixture(t);
+	const merge = `gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`;
+	const shapes: Array<[string, RegExp]> = [
+		["gh pr merge 42 --squash", /no --match-head-commit/],
+		["gh pr merge 42 --match-head-commit " + ATTESTED_HEAD, /--merge, --squash or --rebase/],
+		[`gh pr merge 42 --squash --admin --match-head-commit ${ATTESTED_HEAD}`, /--admin/],
+		[`gh pr merge 42 --squash --auto --match-head-commit ${ATTESTED_HEAD}`, /--auto/],
+		[`gh pr merge 42 --squash --delete-branch --match-head-commit ${ATTESTED_HEAD}`, /--delete-branch is not allowed: it deletes the remote branch/],
+		[`gh pr merge 42 --squash -d --match-head-commit ${ATTESTED_HEAD}`, /--delete-branch is not allowed: it deletes the remote branch/],
+		[`gh pr merge 42 --squash -R owner/repo --match-head-commit ${ATTESTED_HEAD}`, /-R/],
+		[`gh pr merge 42 --squash --repo owner/repo --match-head-commit ${ATTESTED_HEAD}`, /--repo/],
+		[`gh -R owner/repo pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`, /-R/],
+		[`gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD.slice(0, 12)}`, /40-character/],
+		[`gh pr merge --squash --match-head-commit ${ATTESTED_HEAD}`, /PR number/],
+		[`GH_REPO=owner/repo gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`, /single foreground/],
+		[`sh -c 'gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}'`, /single foreground/],
+		[`${merge} && echo done`, /single foreground/],
+		[`git push && ${merge}`, /only delivery/],
+		[`${merge} && gh pr merge 43 --squash --match-head-commit ${ATTESTED_HEAD}`, /only delivery/],
+	];
+	for (const [command, why] of shapes) {
+		const result = await fixture.check(command);
+		assert.equal(result?.block, true, command);
+		assert.match(result!.reason, /committed range/, command);
+		assert.match(result!.reason, /orca-stack attestation did not apply: /, command);
+		assert.match(result!.reason, why, command);
+	}
+	for (const command of [`git commit -am fix && ${merge}`, `${merge} &`]) {
+		const result = await fixture.check(command);
+		assert.equal(result?.block, true, command);
+		assert.match(result!.reason, /Finish candidate-changing commands or background waits/, command);
+		assert.match(result!.reason, /orca-stack attestation did not apply: /, command);
+	}
+	const background = await fixture.check(merge, "bash_background");
+	assert.match(background!.reason, /Finish candidate-changing/);
+	assert.match(background!.reason, /orca-stack attestation did not apply: .*foreground/);
+	assert.equal(fixture.calls.length, 0, "estado never runs for a command shape the attestation cannot cover");
+
+	const answers: Array<[Awaited<ReturnType<OrcaStackAttest>>, RegExp]> = [
+		[{ exitCode: 0, stdout: JSON.stringify({ pr: 42, head: OTHER_HEAD, ok: true, falta: [] }) }, new RegExp(`attests head ${OTHER_HEAD}, but --match-head-commit is ${ATTESTED_HEAD}`)],
+		[{ exitCode: 1, stdout: JSON.stringify({ pr: 42, head: ATTESTED_HEAD, ok: false, falta: ["review sobre el head", "CI pendiente"] }) }, /not ok: review sobre el head; CI pendiente/],
+		[{ exitCode: 0, stdout: JSON.stringify({ pr: 42, head: ATTESTED_HEAD, ok: false, falta: ["CI pendiente"] }) }, /not ok: CI pendiente/],
+		[{ exitCode: 2, stdout: "" }, /exited with code 2/],
+		[{ error: "timed out" }, /could not run orca-stack estado: timed out/],
+		[{ error: "orca-stack not found" }, /could not run orca-stack estado: orca-stack not found/],
+		[{ exitCode: 0, stdout: "{not json" }, /not one JSON object/],
+		[{ exitCode: 0, stdout: "[]" }, /not one JSON object/],
+		[{ exitCode: 0, stdout: JSON.stringify({ pr: 41, head: ATTESTED_HEAD, ok: true, falta: [] }) }, /PR 41, not 42/],
+	];
+	for (const [answer, why] of answers) {
+		fixture.answer(answer);
+		const result = await fixture.check(merge);
+		assert.equal(result?.block, true, JSON.stringify(answer));
+		assert.match(result!.reason, /committed range/);
+		assert.match(result!.reason, /orca-stack attestation did not apply: /);
+		assert.match(result!.reason, why, JSON.stringify(answer));
+	}
+	assert.equal(fixture.calls.length, answers.length);
+});
+
+test("G1 negatives: a root without .orca-stack.json, git push and gh pr create keep today's rules", async t => {
+	const plain = attestationFixture(t, { orca: false });
+	const result = await plain.check(`gh pr merge 42 --squash --match-head-commit ${ATTESTED_HEAD}`);
+	assert.match(result!.reason, /committed range/);
+	assert.match(result!.reason, /orca-stack attestation did not apply: no \.orca-stack\.json/);
+	assert.equal(plain.calls.length, 0);
+	const orca = attestationFixture(t);
+	for (const command of ["git push", "gh pr create --fill"]) {
+		const denied = await orca.check(command);
+		assert.match(denied!.reason, /committed range/, command);
+		assert.doesNotMatch(denied!.reason, /attestation/, command);
+	}
+	assert.equal(orca.calls.length, 0);
+	const off = { reviewMode: async () => ({ status: { effective: "off" } }) } as unknown as NativeReviewCli;
+	let estado = 0;
+	assert.equal(await checkReviewDeliveryPreflight(orca.root, "bash", "gh pr merge 42 --squash", off, () => undefined, () => false, undefined, () => true,
+		async () => { estado++; return { error: "unused" }; }), undefined, "RDD off keeps ordinary command policy");
+	assert.equal(estado, 0);
+});
+
+test("G1: the default estado runner passes fixed arguments without a shell and reports a missing binary", async t => {
+	const bin = mkdtempSync(join(tmpdir(), "review-delivery-estado-"));
+	t.after(() => rmSync(bin, { recursive: true, force: true }));
+	const empty = await runOrcaStackEstado(bin, 42, AbortSignal.timeout(5_000), { PATH: join(bin, "missing"), Path: join(bin, "missing") });
+	assert.ok("error" in empty, "a missing orca-stack is an error, not an attestation");
+	const script = join(bin, "fake-orca-stack.mjs");
+	writeFileSync(script, "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() })); process.exitCode = 3;\n");
+	if (process.platform === "win32") writeFileSync(join(bin, "orca-stack.cmd"), `@echo off\r\nnode "${script}" %*\r\n`);
+	else { writeFileSync(join(bin, "orca-stack"), `#!/bin/sh\nexec node "${script}" "$@"\n`); chmodSync(join(bin, "orca-stack"), 0o755); }
+	const run = await runOrcaStackEstado(bin, 42, AbortSignal.timeout(10_000), { ...process.env, PATH: bin, Path: bin });
+	assert.ok("exitCode" in run, JSON.stringify(run));
+	assert.equal(run.exitCode, 3);
+	assert.deepEqual(JSON.parse(run.stdout).argv, ["estado", "42", "--json"]);
+	assert.equal(realpathSync(JSON.parse(run.stdout).cwd), realpathSync(bin));
 });

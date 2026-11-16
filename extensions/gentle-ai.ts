@@ -11,7 +11,7 @@ import { defaultTempScratchFs, isTempScratchRemoval, type TempScratchFs } from "
 import { SHELL_COMMAND_TOOLS } from "../lib/background-jobs.ts";
 import { evaluateDeliveredTestTool } from "../lib/delivered-test-lint.ts";
 import { commitSliceToolResult } from "../lib/commit-slice-signal.ts";
-import { checkReviewDeliveryPreflight, committedRangeUntrackedExclusion } from "../lib/review-delivery-preflight.ts";
+import { checkReviewDeliveryPreflight, committedRangeUntrackedExclusion, runOrcaStackEstado } from "../lib/review-delivery-preflight.ts";
 import { withReviewerProgress } from "../lib/reviewer-stream.ts";
 import { checkDeliveryConflictMarkers } from "../lib/delivery-conflict-markers.ts";
 import { appendContextBackstopNotice, createContextBackstopSignal, createThrottledContextMeasure } from "../lib/context-backstop.ts";
@@ -316,6 +316,7 @@ import { AutoPermissionRuntime, updateAutoPrompt, type AutoRuntimeClassifier } f
 import { AutoPermissionClassifier } from "../lib/auto-permission-classifier.ts";
 import { acquireChildStandingReviewPermissionClient, type ChildStandingReviewPermissionClient } from "../lib/review-session-standing-permission-ipc.ts";
 import { isPiConsentV3, presentReviewConsentUi } from "../lib/review-consent-ui.ts";
+import { ORCA_STACK_CONSENT_ANSWERED, readOrcaStackConsentPolicy } from "../lib/review-consent-policy.ts";
 import {
 	captureReviewSessionIdentity,
 	grantReviewSessionPermission,
@@ -12665,10 +12666,16 @@ function createGentleAiExtensionForTesting(
 					// The successful native operation above remains authoritative; an
 					// unresolvable local binding simply cannot consume host permission.
 				}
-				const initialIdentity = permissionWorkspaceRoot === undefined
+				// odd/tasks/orca-main-autonomo.md G2: in a linked worktree with an
+				// orca-stack consent policy file, the policy answers instead of the
+				// UI or the parent relay, through the same native answer path.
+				const orcaStackPolicy = eligiblePending === undefined ? undefined : await readOrcaStackConsentPolicy(eligiblePending.authorityCwd);
+				const initialIdentity = orcaStackPolicy !== undefined || permissionWorkspaceRoot === undefined
 					? undefined
 					: await capturePermissionIdentity(ctx, permissionWorkspaceRoot);
-				if (eligiblePending !== undefined && initialIdentity === undefined) {
+				if (eligiblePending !== undefined && orcaStackPolicy !== undefined) {
+					details = { ...(await answerPendingConsent(orcaStackPolicy.answer)), consentAnsweredBy: ORCA_STACK_CONSENT_ANSWERED(orcaStackPolicy.answer, orcaStackPolicy.path) };
+				} else if (eligiblePending !== undefined && initialIdentity === undefined) {
 					// A package child has no local standing grant. It may ask its
 					// inherited parent only for the canonical repository identity of
 					// this exact pending target, then replay this local binding once.
@@ -13287,7 +13294,9 @@ function createGentleAiExtensionForTesting(
 		const deliveryDenied = await checkReviewDeliveryPreflight(ctx.cwd, event.toolName, command, nativeReviewCli,
 			root => processRetainedNativeStatusSelections.get(sessionKey)?.readCommittedRange(root),
 			(root, target) => readNativeReviewOutcome(root, target) === "declined", ctx.signal,
-			() => deliveryEpoch === reminderEpoch && modeEpoch === yolo.epoch() && pendingReviewConsentSessionKey(ctx, pendingReviewConsentFallbackKey) === sessionKey);
+			() => deliveryEpoch === reminderEpoch && modeEpoch === yolo.epoch() && pendingReviewConsentSessionKey(ctx, pendingReviewConsentFallbackKey) === sessionKey,
+			// odd/tasks/orca-main-autonomo.md G1: the guard itself asks orca-stack for the merge attestation.
+			(root, pr, attestSignal) => runOrcaStackEstado(root, pr, attestSignal));
 		// cost-speed P9: after the RDD preflight (its denials win unchanged), independent of RDD mode; fails open.
 		// It runs BEFORE the epoch recheck below: no await may sit between that recheck and the return.
 		const markerDenied = !deliveryDenied && primaryToolCall ? await checkDeliveryConflictMarkers(ctx.cwd, command, ctx.signal) : undefined;

@@ -105,8 +105,15 @@ function deliveryCommandScopes(tokens: readonly Token[], substitutions: readonly
 	return { background: ranges, subshells };
 }
 
+/**
+ * A `gh pr merge` delivery carries its `gh` arguments (global flags included)
+ * and whether it is a single foreground command: top level, no assignment or
+ * wrapper prefix, preceded only by a literal `cd` chain and followed by nothing.
+ */
+export interface ReviewDeliveryMerge { args: readonly string[]; plain: boolean }
+
 /** Delivery and candidate changes share the guard's existing command-position rules. */
-export function recognizeReviewDeliveryActions(command: string, depth = 0): Array<{ kind: "change" | "delivery"; directories?: readonly string[]; unresolvedDirectory?: true; background?: true }> {
+export function recognizeReviewDeliveryActions(command: string, depth = 0): Array<{ kind: "change" | "delivery"; directories?: readonly string[]; unresolvedDirectory?: true; background?: true; merge?: ReviewDeliveryMerge }> {
 	return collectReviewDeliveryActions(command, depth);
 }
 
@@ -159,6 +166,7 @@ function collectReviewDeliveryActions(command: string, depth: number, onRoutingE
 			else unresolvedDirectory = true;
 		}
 		if (name === "pushd" || name === "popd") unresolvedDirectory = true;
+		const onlyCdBefore = leadingCdChain;
 		if (segment.length && name !== "cd") leadingCdChain = false;
 		contexts.push({ from, to: tokens[end]?.index ?? command.length, unresolved: unresolvedDirectory || unresolvedPrefix, directories: [...directories] });
 		while (name === "git" && index < args.length && args[index].startsWith("-")) {
@@ -183,7 +191,10 @@ function collectReviewDeliveryActions(command: string, depth: number, onRoutingE
 		if (name === "git" && args[index] === "push" && args.slice(index + 1).some(arg => ["--dry-run", "-n", "--delete", "-d"].includes(arg))) continue;
 		if (name === "git" && ["commit", "merge", "rebase", "reset", "checkout", "switch", "cherry-pick", "revert", "am", "pull", "update-ref"].includes(args[index])) matches.push({ kind: "change" });
 		if ((name === "git" && args[index] === "push") || (name === "gh" && args[index] === "pr" && ["create", "merge"].includes(args[index + 1]))) {
-			matches.push({ kind: "delivery",
+			const merge = name === "gh" && args[index + 1] === "merge"
+				? { merge: { args, plain: depth === 0 && cursor === 0 && onlyCdBefore && tokens.slice(end).every(token => token.operator && token.raw === "\n") } }
+				: {};
+			matches.push({ kind: "delivery", ...merge,
 				...(isBackground(segment[cursor].index) ? { background: true as const } : {}),
 				...(unresolvedDirectory || unresolvedGitDirectory || unresolvedPrefix || routingUnknown(segment[cursor].index) ? { unresolvedDirectory: true as const } : {}),
 				...(!directories.length && !gitDirectories.length ? {} : { directories: [...directories, ...gitDirectories] }) });

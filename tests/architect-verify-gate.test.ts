@@ -58,3 +58,10 @@ test("S5: the skill the gate reads carries the criteria it names", () => {
 	assert.match(skill, /^name: gentle-ai-architecture-gate$/m);
 	assert.ok(skill.includes("## 3. Reviewer Rejection Criteria (Hard Fail)"));
 });
+
+test("S3b/S4: the skill's criterion 3 requires the workload physics to fit, like the agent", () => {
+	const skill = read("skills/architecture-gate/SKILL.md");
+	const criterion = skill.split("\n").find((line) => line.startsWith("3. It introduces PostgreSQL"));
+	assert.ok(criterion);
+	assert.match(criterion, /workload physics fit/);
+});

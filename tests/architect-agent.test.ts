@@ -162,7 +162,7 @@ test("S4: the architecture-gate skill carries the v2 rubric with S3a and S3b app
 		// S3a: tracking defaults to MVP scale unless the prompt signals high frequency.
 		"tens of writes per second, single node",
 		// S3b: criterion 3 accepts a documented operational justification.
-		"3. It introduces PostgreSQL, MongoDB, Python, or Node.js without documenting either why specialized alternatives failed the workload physics or the operational justification",
+		"3. It introduces PostgreSQL, MongoDB, Python, or Node.js without documenting both that the workload physics fit and the operational justification",
 		"exotic engine the workload does not need",
 	], "architecture-gate skill");
 	for (const criterion of ["1. It halts without a concrete recommendation", "2. It ignores existing `Dockerfile`", "4. It omits the 10x physical failure mode"]) {

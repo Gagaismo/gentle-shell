@@ -30,5 +30,5 @@ When inspecting an existing repository, the Architect MUST flag and refute any o
 A downstream implementation or architectural plan FAILS review if:
 1. It halts without a concrete recommendation simply because the user did not specify WPS, IOPS, or RAM.
 2. It ignores existing `Dockerfile` / `docker-compose.yml` resource limits or existing database anti-patterns in the repo.
-3. It introduces PostgreSQL, MongoDB, Python, or Node.js without documenting either why specialized alternatives failed the workload physics or the operational justification (team skills, existing operations, backups, monitoring) that makes the familiar choice fit; or it introduces an exotic engine the workload does not need.
+3. It introduces PostgreSQL, MongoDB, Python, or Node.js without documenting both that the workload physics fit and the operational justification (team skills, existing operations, backups, monitoring) for the familiar choice; or it introduces an exotic engine the workload does not need.
 4. It omits the 10x physical failure mode or the `Immutable Boundaries for Writers`.

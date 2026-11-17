@@ -32,4 +32,4 @@ Independent units with disjoint surfaces launch together: all their `subagent_ru
 4. **Track** — by Task Size above.
 5. **Incident** — diagnose a wrong cwd, worktree, git or tooling incident separately before resuming.
 6. **Context backstop** — when the runtime signals it, delegate the next unit instead of absorbing it.
-7. **Architect** — task chooses a runtime or storage engine or adds a backend/service → `gentle-ai-architect` before the first writer, else never; record its ADR verbatim in the feature document `## Log` and mirror, turn its Immutable Boundaries for Writers into `S#` lines that writers and `gentle-ai-verify` read by reference, relay its Sanity Check questions (at most 2) to the user.
+7. **Architect** — task chooses a runtime or storage engine or adds a deployable backend/service (not an in-app class/module) → `gentle-ai-architect` before the first writer, else never; record its ADR verbatim in the feature document `## Log` and mirror, turn its Immutable Boundaries for Writers into `S#` lines writers and `gentle-ai-verify` read by reference, relay its Sanity Check questions (max 2) to the user.

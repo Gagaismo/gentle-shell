@@ -34,16 +34,18 @@ for (const [mode, { rendered, firstWrite }] of Object.entries(MODES)) {
 	test(`S6 ${mode}: the always-on prompt launches the architect on stack decisions and only then`, () => {
 		const line = architectLine(rendered());
 		for (const clause of [
-			"chooses a runtime or storage engine or adds a backend/service",
+			// Verifier finding: a service class or module inside an existing app is not a new deployable service.
+			"chooses a runtime or storage engine or adds a deployable backend/service (not an in-app class/module) →",
 			"`gentle-ai-architect`",
 			firstWrite,
 			"else never",
 			"its ADR verbatim in the feature document `## Log` and mirror",
-			"its Immutable Boundaries for Writers into `S#` lines that writers and `gentle-ai-verify` read by reference",
-			"relay its Sanity Check questions (at most 2) to the user",
+			"its Immutable Boundaries for Writers into `S#` lines writers and `gentle-ai-verify` read by reference",
+			"relay its Sanity Check questions (max 2) to the user",
 		]) {
 			assert.ok(line.includes(clause), `${mode} Architect mechanism is missing: ${clause}`);
 		}
+		assert.ok(!line.includes("adds a backend/service →"), `${mode} Architect trigger must not fire on any service class or module`);
 	});
 }
 

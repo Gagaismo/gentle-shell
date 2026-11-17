@@ -61,8 +61,9 @@ test("rendered orchestrator core and selected declarations fit the byte budget",
 	// cost-speed P14 (PD-81): the core's Evidence-budget lookup number matches the runtime; 16,683 -> 16,671 B.
 	// #3188: orchestrator_session_id state also accepts a JSON string (same validation), +18 B structural anyOf
 	// variant with no added description text; 16,671 -> 16,689 B.
-	// 2026-11-17 user decision: architect routing trigger (odd/tasks/architect-agent.md S6); 16,689 -> 17,079 B.
-	assert.ok(total <= 17079, `rendered core ${prompt} B + declarations ${declarationBytes} B = ${total} B`);
+	// 2026-11-17 user decision: architect routing trigger (odd/tasks/architect-agent.md S6); 16,689 -> 17,079 B;
+	// the trigger names a deployable backend/service, not an in-app class/module: 17,079 -> 17,110 B.
+	assert.ok(total <= 17110, `rendered core ${prompt} B + declarations ${declarationBytes} B = ${total} B`);
 });
 
 // Pi 1.4 does not export its pure system assembler from the package root.

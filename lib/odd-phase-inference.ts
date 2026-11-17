@@ -29,6 +29,7 @@ const DELEGATED_PHASES: Readonly<Record<string, OddPhase>> = {
 	"gentle-ai-worker": "implementing",
 	"gentle-ai-verify": "checking",
 	"gentle-ai-explore": "exploring",
+	"gentle-ai-architect": "exploring",
 };
 
 const WRITE_TOOLS = new Set(["edit", "write"]);

@@ -362,12 +362,12 @@ function requestedWebPackagePaths(request: TaskRequest): string[] {
 	}
 }
 
-// The package-owned generic agents receive the exact skill paths they need in
+// The package-owned generic agents and the architect receive the exact skill paths they need in
 // the task and read them with `read`, so their children drop Pi's skills
 // catalog (extensions/child-context.ts). Identified by name plus the global
 // `agents/` directory the package installs into; a project or `subagents/`
 // agent reusing a name keeps the catalog.
-const NO_SKILLS_CATALOG_AGENTS = new Set(["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify"]);
+const NO_SKILLS_CATALOG_AGENTS = new Set(["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify", "gentle-ai-architect"]);
 
 function dropsSkillsCatalog(agent: TaskRequest["agent"]): boolean {
 	return NO_SKILLS_CATALOG_AGENTS.has(agent.name) && agent.scope === "global" &&
@@ -545,8 +545,21 @@ export class JsonLines {
 	}
 }
 
+// Those catalog-less children reach the packaged architecture-gate skill only
+// by path. A relative path would resolve against the child's project cwd, so
+// the runtime names the absolute packaged path unless the task already does.
+const ARCHITECTURE_GATE_AGENTS = new Set(["gentle-ai-architect", "gentle-ai-verify"]);
+const ARCHITECTURE_GATE_SKILL_PATH = fileURLToPath(new URL("../skills/architecture-gate/SKILL.md", import.meta.url));
+
+function packagedSkillPaths(request: TaskRequest): string {
+	if (!ARCHITECTURE_GATE_AGENTS.has(request.agent.name) || !dropsSkillsCatalog(request.agent)) return "";
+	if (request.prompt.includes(ARCHITECTURE_GATE_SKILL_PATH) || request.context?.includes(ARCHITECTURE_GATE_SKILL_PATH)) return "";
+	return `\n\n## Packaged skill paths\n- \`gentle-ai-architecture-gate\`: ${ARCHITECTURE_GATE_SKILL_PATH}`;
+}
+
 export function promptText(request: TaskRequest): string {
-	return request.context ? `${request.prompt}\n\n## Context\n${request.context}` : request.prompt;
+	const prompt = request.prompt + packagedSkillPaths(request);
+	return request.context ? `${prompt}\n\n## Context\n${request.context}` : prompt;
 }
 
 export class AgentRunner {

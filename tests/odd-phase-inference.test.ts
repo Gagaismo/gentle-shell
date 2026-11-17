@@ -186,6 +186,7 @@ test("known delegated agents infer the parent work phase in foreground and backg
 		["gentle-ai-worker", "implementing"],
 		["gentle-ai-verify", "checking"],
 		["gentle-ai-explore", "exploring"],
+		["gentle-ai-architect", "exploring"],
 	] as const) {
 		for (const mode of ["task", "background"]) {
 			assert.equal(inferOddPhase("subagent_run", { agent, mode, task: "untrusted task prose" }), phase);

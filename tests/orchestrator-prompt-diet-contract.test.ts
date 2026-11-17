@@ -173,12 +173,15 @@ test("S5 change 5: gentle_odd_phase does not restate the Phase reporting cadence
 // cost-speed P14: the duplicate gentleman Language line (-80 B, PD-57) and the core's evidence-budget number aligned
 // to the runtime (-12 B in both modes, PD-81); measured organic 24,164/24,416 B and full delegation 22,131/22,383 B.
 const PRIMARY_PROMPT_BUDGETS: Record<(typeof MODES)[number], Record<(typeof PERSONAS)[number], number>> = {
-	organic: { gentleman: 24_164, neutral: 24_416 },
+	// 2026-11-17 user decision: architect routing trigger (odd/tasks/architect-agent.md S6), mechanism 8 in organic and 7 in
+	// full delegation (+381/+377 B); measured organic 24,545/24,797 B and full delegation 22,505/22,757 B. The trigger then named a
+	// deployable backend/service, not an in-app class/module (+31 B): organic 24,576/24,828 B, full delegation 22,536/22,788 B.
+	organic: { gentleman: 24_576, neutral: 24_828 },
 	// cost-speed P6 (X9): launch form, continue-one-worker rule and the tracking pointer, paid by the motivation
 	// sentence and a duplicate of step 6's verbatim-request rule (22,253/22,425 -> 22,223/22,395 B).
 	// cost-speed P6b: the launch sentence names the same assistant message, the `codemode` route and the sequential
 	// tools (+126 B), paid by tightening five sentences of the same asset (22,131/22,383 -> 22,128/22,380 B).
-	"full-delegation": { gentleman: 22_128, neutral: 22_380 },
+	"full-delegation": { gentleman: 22_536, neutral: 22_788 },
 };
 
 test("S5: the rendered primary prompt fits the lowered per-mode budgets", (t) => {

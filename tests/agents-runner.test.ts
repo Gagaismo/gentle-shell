@@ -888,7 +888,7 @@ test("childArguments forwards a plain package root without --no-extensions", () 
 // parent, so the runner tells their children to drop the skills catalog.
 test("AgentRunner marks only the package-owned generic agents' children to drop the skills catalog", async () => {
 	const h = harness({ maxConcurrency: 16 });
-	const packaged = ["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify"].map(name => ({ ...explorer, name, filePath: `/home/u/.pi/agent/agents/${name}.md` }));
+	const packaged = ["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify", "gentle-ai-architect"].map(name => ({ ...explorer, name, filePath: `/home/u/.pi/agent/agents/${name}.md` }));
 	const others: AgentDefinition[] = [
 		explorer,
 		...["jd-judge-a", "jd-fix-agent", "review-risk"].map(name => ({ ...explorer, name, filePath: `/home/u/.pi/agent/agents/${name}.md` })),

@@ -43,7 +43,10 @@ const FIXTURE_PATH = join(import.meta.dirname, "fixtures", "orchestrator.pre-die
 // intro carries the same pointer); measured 9,347 -> 9,197 B at the 128-char root: 9,350 -> 9,197 B.
 // cost-speed-painpoints S15 P5a: verdicts C7, C9, C12, X1, X3 and C8 (L41); measured 9,197 -> 9,189 B at the 128-char root.
 // cost-speed P14 (PD-81): the Evidence-budget lookup number matches the runtime notice; measured 9,189 -> 9,177 B.
-const BUDGET_BYTES = 9177;
+// 2026-11-17 user decision: architect routing trigger (odd/tasks/architect-agent.md S6); mechanism 8 launches
+// gentle-ai-architect on runtime/storage/backend choices; measured 9,177 -> 9,567 B at the 128-char root; the trigger
+// names a deployable backend/service, not an in-app class/module (verifier finding): 9,567 -> 9,598 B.
+const BUDGET_BYTES = 9598;
 const MIN_CONTROLLED_LONG_ASSETS_ROOT_CHARS = 93;
 
 const LAZY_ASSET_NAMES = [

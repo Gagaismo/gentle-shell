@@ -104,6 +104,7 @@ Delegation Triggers — each mechanism turns on only when its own trigger condit
 5. **Writer rule** — never by file count or a large task alone; only for a reason (`orchestrator-writer.md`): 2+ independent units of behavior, each heavier than a subagent start (several minutes of work: several files or roughly 100+ changed lines), launched together in one turn (in background when background mode is on), else inline; Context backstop. Small module or command changes stay inline, even when independent. Tests, docs, and code of the same behavior are one unit, never separate writers; dependent deliveries are not independent.
 6. **Incident rule** — diagnose wrong cwd/worktree/git/tooling incidents separately before resuming.
 7. **Context backstop** — when the runtime signals it → delegate the next unit needing several steps. Bound command output (counts, `--stat`, `tail`).
+8. **Architect** — task chooses a runtime or storage engine or adds a backend/service → `gentle-ai-architect` before the first write, else never; record its ADR verbatim in the feature document `## Log` and mirror, turn its Immutable Boundaries for Writers into `S#` lines that writers and `gentle-ai-verify` read by reference, relay its Sanity Check questions (at most 2) to the user.
 
 Background subagent policy: off (capability: ready)
 Receipt-driven development: unknown (native status unavailable); rules: background block, `orchestrator-delegation-reference.md`.

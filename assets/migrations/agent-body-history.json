@@ -1,6 +1,9 @@
 {
   "schemaVersion": 1,
   "bodies": {
+    "agents/gentle-ai-architect.md": [
+      "cf050e5388aaa9e28b456c8e0c17c74914f2024e64125df2096bf153a9eacda1"
+    ],
     "agents/gentle-ai-explore.md": [
       "1436a9d11151b23a3b78ca42fe94658d7f074af38136b471cd4c015aa0dfff26",
       "389c74cc4d949acaad20f21a13606755f46a73e74f07325851d44c445b1b689b",

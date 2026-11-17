@@ -362,12 +362,12 @@ function requestedWebPackagePaths(request: TaskRequest): string[] {
 	}
 }
 
-// The package-owned generic agents receive the exact skill paths they need in
+// The package-owned generic agents and the architect receive the exact skill paths they need in
 // the task and read them with `read`, so their children drop Pi's skills
 // catalog (extensions/child-context.ts). Identified by name plus the global
 // `agents/` directory the package installs into; a project or `subagents/`
 // agent reusing a name keeps the catalog.
-const NO_SKILLS_CATALOG_AGENTS = new Set(["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify"]);
+const NO_SKILLS_CATALOG_AGENTS = new Set(["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify", "gentle-ai-architect"]);
 
 function dropsSkillsCatalog(agent: TaskRequest["agent"]): boolean {
 	return NO_SKILLS_CATALOG_AGENTS.has(agent.name) && agent.scope === "global" &&

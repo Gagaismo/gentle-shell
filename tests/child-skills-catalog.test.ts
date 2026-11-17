@@ -4,8 +4,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createChildContextExtension } from "../extensions/child-context.ts";
 import { CHILD_SKILLS_CATALOG_ENV } from "../lib/agents-runner.ts";
 
-// The runner marks the children of gentle-ai-worker, gentle-ai-explore and
-// gentle-ai-verify: their parent injects exact skill paths, so the hook empties
+// The runner marks the children of gentle-ai-worker, gentle-ai-explore,
+// gentle-ai-verify and gentle-ai-architect: their parent injects exact skill paths, so the hook empties
 // Pi's skills list and the `<available_skills>` section is never sent.
 type BeforeAgentStart = (event: unknown, ctx: unknown) => unknown;
 
@@ -22,7 +22,7 @@ function event() {
 	return { systemPrompt: "base", systemPromptOptions: { appendSystemPrompt: "", contextFiles, skills } };
 }
 
-for (const agent of ["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify"]) {
+for (const agent of ["gentle-ai-worker", "gentle-ai-explore", "gentle-ai-verify", "gentle-ai-architect"]) {
 	test(`a marked ${agent} child sends no skills catalog`, async () => {
 		const handler = beforeAgentStart({ GENTLE_PI_AGENTS_CHILD: "1", [CHILD_SKILLS_CATALOG_ENV]: "1" });
 		const e = event();

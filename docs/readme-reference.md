@@ -762,7 +762,7 @@ The intended balanced loop for a bounded bugfix is:
 parent git/status + clarify → one worker writes authorized fixes → focused verification → parent reports
 ```
 
-`gentle-ai-explore` saves parent context by compressing broad exploration. `worker` runs one bounded writer thread; parallel writers only with disjoint Allowed edit surfaces (runtime-enforced) or isolated worktrees.
+`gentle-ai-explore` saves parent context by compressing broad exploration. `gentle-ai-architect` is a read-only systems architect for stack decisions (choosing a runtime or storage engine, adding a backend or service): it inspects the repository, infers a conservative workload envelope when the prompt gives no numbers, loads the `gentle-ai-architecture-gate` skill, cites the URL for engine limits it relies on (or marks them unverified without web tools), and returns the content of a `docs/adr/ADR-<id>-<slug>.md` proposal to the parent; it writes no files. Like the other package agents it ships no model, so it inherits the profile default until `/gentle:profiles` routes one. `worker` runs one bounded writer thread; parallel writers only with disjoint Allowed edit surfaces (runtime-enforced) or isolated worktrees.
 
 "Runtime-enforced" means an admission-time check inside one Pi process: when `subagent_run` or `subagent_continue` queues a bounded writer, it is rejected if a queued or running writer of the same parent process, in the same worktree, has an overlapping `## Allowed edit surfaces` entry. Writers are keyed by their canonical worktree root (the realpath of the Git worktree root, or the realpath of the cwd outside Git), so a subdirectory cwd, the root itself, and a symlinked spelling count as one worktree. It is not a write-time guard: it does not stop a writer from editing outside its declared surfaces, and separate Pi parent processes do not coordinate with each other. Overlap is conservative: an entry also covers everything under it, a whole-segment `**` covers any depth, while `**` inside a segment (for example `src/**.ts`) matches within that one segment, like minimatch. Entries compare in Unicode NFC. Entries with bracket classes, extglob groups, backslashes, or nested, unbalanced, or `/`-spanning braces overlap every other entry, and a wildcard never proves two entries disjoint when either contains non-ASCII characters. A quarantined writer whose process exit is unconfirmed keeps its surfaces until the exit is confirmed; a process that survives quarantine keeps both its surface claim and its concurrency slot until its exit is observed, which can last for the parent's lifetime. Any RDD-specific actor behavior belongs to the runtime instruction supplied by Gentle AI, not to this README.
 
@@ -1093,6 +1093,7 @@ A project can still override the global default with:
 │ ▸ Orchestrator        openai-codex/gpt-6.1-sol                max            │
 │  ──────────────────────────────────────────────────────────────              │
 │   Agent               Model ▾                                 Effort ▾       │
+│   gentle-ai-architect inherit                                 inherit        │
 │   gentle-ai-explore   nan/deepseek-v4-flash                   high           │
 │   gentle-ai-worker    nan/glm5.3-flash                        high           │
 │                                                                              │
@@ -1529,6 +1530,7 @@ Use it when you want skills available normally but do not want Gentle AI to refr
 - `gentle-ai-issue-creation` — issue workflow with checks before creation.
 - `gentle-ai-skill-creator` — create LLM-first skills with valid frontmatter.
 - `gentle-ai-skill-improver` — audit and upgrade existing LLM-first skills.
+- `gentle-ai-architecture-gate` — architecture rubric for runtime and storage choices: domain-to-physics inference, brownfield refutation, and reviewer rejection criteria for architect ADRs.
 
 ## Memory
 

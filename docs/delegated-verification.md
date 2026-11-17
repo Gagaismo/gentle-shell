@@ -36,6 +36,10 @@ The change kind decides the verifier's evidence; it never decides whether a veri
 
 When the real case needs the network, an install, or a tool, version, or configuration the verifier's scratch copy does not have, the verifier reports that check unverified with its exact command, and the parent runs that check itself before calling the change verified. Evidence for this split: in one long session the verifier's change-caused findings came only from real-case reproduction, sentence-by-sentence review of prompt text, and its own probes; re-running the writer's suite found none, and the one defect that reached the user escaped because the fixture did not match the user's environment.
 
+## Architect ADR gate
+
+Only when the task or the feature document carries a `gentle-ai-architect` ADR (its yaml header and its `Immutable Boundaries for Writers` section), the verifier reads the `gentle-ai-architecture-gate` skill (the path the parent lists under `## Skills to load before work`, else the packaged `skills/architecture-gate/SKILL.md`), applies its "Reviewer Rejection Criteria (Hard Fail)" and every Immutable Boundary to the implementation, and returns a verdict per boundary alongside the per-`S#` verdicts; a violated boundary or a matched hard-fail criterion is a blocker. Without an architect ADR the verifier skips the gate and behaves as before. The gate adds no launch, admission, or review-lens rule.
+
 ## Verifier launch admission and post-denial disposition (gentle-shell#2478)
 
 The `gentle-ai-verify` launch is admitted only when its `task` or `context` declares a named high-risk item, names a task of an existing feature document, or the parent's measured context reaches the backstop. The declaration grammar is strict: `Risk: item N (reason)` must start a line (optionally after a list marker like `- `) or start a sentence (after `.`, `!` or `?` and a space). A declaration after another separator such as `; ` or `,` inside a sentence is not recognized. Keep the risk evidence tied to the actual change; never add a Risk line only to gain admission.

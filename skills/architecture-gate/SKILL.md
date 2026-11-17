@@ -14,11 +14,13 @@ This rubric feeds `gentle-ai-architect`, which loads it before engine routing, a
 ## 1. Domain-to-Physics Inference Table (When User Gives Zero Specs)
 When a prompt lacks technical metrics, map the domain intent to these baseline physical profiles:
 - **Analytics / Events / Logs / Tracking:** Write-heavy append-only. Default to MVP scale (tens of writes per second, single node): a single-node engine (SQLite WAL, DuckDB, or a store the team already operates) is enough. Only when the prompt signals a device fleet, high-frequency sampling, or multi-tenant ingestion → **Columnar (ClickHouse / DuckDB)** + compiled batcher (**Go / Rust**). Declare which profile was assumed.
-- **Transactional Core / Billing / Inventory / Users:** Point lookups + ACID invariants → **B-Tree (SQLite WAL for single-node; PostgreSQL for multi-node)** + typed backend (**Go / Rust / Java**).
+- **Transactional Core / Billing / Inventory / Users:** Point lookups + ACID invariants → **B-Tree (SQLite WAL for single-node; PostgreSQL for multi-node)** + typed backend (**Go / Rust / Java**), unless the team's familiar runtime fits the envelope and that operational justification is written down.
 - **Queues / Webhooks / Real-time Streams:** High concurrency + ephemeral state → **Log/Stream Broker (NATS JetStream / Valkey)**.
 - **Search / Full-text / Vectors:** Inverted index / HNSW → **Meilisearch / Qdrant / Tantivy** (never brute-force `LIKE` or unindexed vector scans on OLTP DBs).
 
-Every routing choice also weighs operational and team cost: who operates it, backups, monitoring, and the language the team already knows. A familiar stack (PostgreSQL, Node.js, Python) is valid when the workload physics fit and that operational justification is written down; an exotic engine the workload does not need is a defect too.
+**Familiar defaults** (canonical list): PostgreSQL, MySQL, MongoDB, Redis, Python, Node.js.
+
+Every routing choice also weighs operational and team cost: who operates it, backups, monitoring, and the language the team already knows. A familiar default is valid when the workload physics fit and that operational justification is written down; an exotic engine the workload does not need is a defect too.
 
 ## 2. Brownfield Anti-Patterns (Mandatory Refutation Triggers)
 When inspecting an existing repository, the Architect MUST flag and refute any of the following:
@@ -30,5 +32,5 @@ When inspecting an existing repository, the Architect MUST flag and refute any o
 A downstream implementation or architectural plan FAILS review if:
 1. It halts without a concrete recommendation simply because the user did not specify WPS, IOPS, or RAM.
 2. It ignores existing `Dockerfile` / `docker-compose.yml` resource limits or existing database anti-patterns in the repo.
-3. It introduces PostgreSQL, MongoDB, Python, or Node.js without documenting both that the workload physics fit and the operational justification (team skills, existing operations, backups, monitoring) for the familiar choice; or it introduces an exotic engine the workload does not need.
+3. It introduces a familiar default (PostgreSQL, MySQL, MongoDB, Redis, Python, or Node.js) without documenting both that the workload physics fit and the operational justification (team skills, existing operations, backups, monitoring) for the familiar choice; or it introduces an exotic engine the workload does not need.
 4. It omits the 10x physical failure mode or the `Immutable Boundaries for Writers`.

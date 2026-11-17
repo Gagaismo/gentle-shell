@@ -130,7 +130,7 @@ test("S3d: the ADR is a proposal returned to the parent and the gate skill is lo
 		"You never write that file; the parent persists it.",
 		"Before Phase 2, read the `gentle-ai-architecture-gate` skill",
 		"`## Skills to load before work`",
-		"`skills/architecture-gate/SKILL.md`",
+		"the packaged path the runtime supplies under `## Packaged skill paths`",
 	], "S3d");
 	assert.ok(body.indexOf("Before Phase 2, read the `gentle-ai-architecture-gate` skill") < body.indexOf("## Phase 2:"));
 });
@@ -162,7 +162,7 @@ test("S4: the architecture-gate skill carries the v2 rubric with S3a and S3b app
 		// S3a: tracking defaults to MVP scale unless the prompt signals high frequency.
 		"tens of writes per second, single node",
 		// S3b: criterion 3 accepts a documented operational justification.
-		"3. It introduces PostgreSQL, MongoDB, Python, or Node.js without documenting both that the workload physics fit and the operational justification",
+		"3. It introduces a familiar default (PostgreSQL, MySQL, MongoDB, Redis, Python, or Node.js) without documenting both that the workload physics fit and the operational justification",
 		"exotic engine the workload does not need",
 	], "architecture-gate skill");
 	for (const criterion of ["1. It halts without a concrete recommendation", "2. It ignores existing `Dockerfile`", "4. It omits the 10x physical failure mode"]) {
@@ -175,4 +175,34 @@ test("docs list the architect agent and the architecture-gate skill", () => {
 	assert.match(reference, /- `gentle-ai-architecture-gate` — /);
 	assert.match(reference, /`gentle-ai-architect`/);
 	assert.match(read("docs/gentle-shell.md"), /`gentle-ai-verify`, and `gentle-ai-architect` agents start without Pi's skills catalog/);
+});
+
+// S8: one canonical list of familiar defaults lives in the skill; the agent's
+// mandate, Hard Constraint 2, and the skill's criterion 3 all carry it, so
+// verify's hard fail covers every default the architect bans.
+const FAMILIAR_DEFAULTS = ["PostgreSQL", "MySQL", "MongoDB", "Redis", "Python", "Node.js"];
+
+test("S8: the familiar-defaults list is identical in the skill, its criterion 3, the mandate, and Hard Constraint 2", () => {
+	const skill = read(SKILL);
+	const agent = read(AGENT);
+	const canonical = skill.match(/^\*\*Familiar defaults\*\* \(canonical list\): (.+)\.$/m)?.[1];
+	assert.ok(canonical, "the skill declares the canonical familiar-defaults list");
+	assert.deepEqual(canonical.split(", "), FAMILIAR_DEFAULTS);
+	const lines = {
+		"skill criterion 3": skill.split("\n").find((line) => line.startsWith("3. It introduces ")),
+		"agent mandate": agent.split("\n").find((line) => line.startsWith("1. **Prevent statistical regression to the mean:**")),
+		"agent Hard Constraint 2": agent.split("\n").find((line) => line.startsWith("2. **Ban on Unjustified Defaults:**")),
+	};
+	for (const [label, line] of Object.entries(lines)) {
+		assert.ok(line, `${label} is missing`);
+		const listed = FAMILIAR_DEFAULTS.filter((name) => line.includes(name));
+		assert.deepEqual(listed, FAMILIAR_DEFAULTS, `${label} must name every familiar default`);
+	}
+});
+
+test("S8: the skill's Transactional Core row carries the S3b familiar-runtime qualifier", () => {
+	const qualifier = "unless the team's familiar runtime fits the envelope and that operational justification is written down";
+	const row = read(SKILL).split("\n").find((line) => line.startsWith("- **Transactional Core / Billing / Inventory / Users:**"));
+	assert.ok(row?.includes(qualifier), "the Transactional Core row lacks the familiar-runtime qualifier");
+	assert.ok(read(AGENT).includes(qualifier), "the agent's Phase 2 qualifier changed; keep both identical");
 });

@@ -33,7 +33,7 @@ test("S5: verify applies the architecture gate only when the task carries an arc
 		"`Immutable Boundaries for Writers`",
 		"read the `gentle-ai-architecture-gate` skill",
 		"`## Skills to load before work`",
-		"the packaged `skills/architecture-gate/SKILL.md`",
+		"the packaged path the runtime supplies under `## Packaged skill paths`",
 		"\"Reviewer Rejection Criteria (Hard Fail)\"",
 		"every Immutable Boundary",
 		"a verdict per boundary",
@@ -61,7 +61,15 @@ test("S5: the skill the gate reads carries the criteria it names", () => {
 
 test("S3b/S4: the skill's criterion 3 requires the workload physics to fit, like the agent", () => {
 	const skill = read("skills/architecture-gate/SKILL.md");
-	const criterion = skill.split("\n").find((line) => line.startsWith("3. It introduces PostgreSQL"));
+	const criterion = skill.split("\n").find((line) => line.startsWith("3. It introduces "));
 	assert.ok(criterion);
 	assert.match(criterion, /workload physics fit/);
+});
+
+test("S7: an ADR with an unreadable gate skill makes the gate unverified and blocking, never a silent skip", () => {
+	containsAll(gateSection(), [
+		"the packaged path the runtime supplies under `## Packaged skill paths`",
+		"If an architect ADR is present and the skill cannot be read, report the architecture gate as unverified",
+		"it is a blocker for completion; never skip the gate silently",
+	], "unreadable gate skill");
 });

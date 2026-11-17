@@ -23,7 +23,7 @@ When the parent supplies an ODD feature document, read all of it, including the 
 
 ## Architect ADR gate
 
-Only when the task or the feature document carries a `gentle-ai-architect` ADR (its yaml header and its `Immutable Boundaries for Writers` section): read the `gentle-ai-architecture-gate` skill (the exact path under `## Skills to load before work`, else the packaged `skills/architecture-gate/SKILL.md`), apply its "Reviewer Rejection Criteria (Hard Fail)" and every Immutable Boundary to the implementation, and return a verdict per boundary (met or violated, with `path:line` evidence) alongside the per-`S#` verdicts. A violated boundary or a matched hard-fail criterion is a blocker. Without an architect ADR, skip this section.
+Only when the task or the feature document carries a `gentle-ai-architect` ADR (its yaml header and its `Immutable Boundaries for Writers` section): read the `gentle-ai-architecture-gate` skill (the exact path under `## Skills to load before work`, else the packaged path the runtime supplies under `## Packaged skill paths`), apply its "Reviewer Rejection Criteria (Hard Fail)" and every Immutable Boundary to the implementation, and return a verdict per boundary (met or violated, with `path:line` evidence) alongside the per-`S#` verdicts. A violated boundary or a matched hard-fail criterion is a blocker. If an architect ADR is present and the skill cannot be read, report the architecture gate as unverified: it is a blocker for completion; never skip the gate silently. Without an architect ADR, skip this section.
 
 ## Spec-derived probes
 

@@ -545,8 +545,21 @@ export class JsonLines {
 	}
 }
 
+// Those catalog-less children reach the packaged architecture-gate skill only
+// by path. A relative path would resolve against the child's project cwd, so
+// the runtime names the absolute packaged path unless the task already does.
+const ARCHITECTURE_GATE_AGENTS = new Set(["gentle-ai-architect", "gentle-ai-verify"]);
+const ARCHITECTURE_GATE_SKILL_PATH = fileURLToPath(new URL("../skills/architecture-gate/SKILL.md", import.meta.url));
+
+function packagedSkillPaths(request: TaskRequest): string {
+	if (!ARCHITECTURE_GATE_AGENTS.has(request.agent.name) || !dropsSkillsCatalog(request.agent)) return "";
+	if (request.prompt.includes(ARCHITECTURE_GATE_SKILL_PATH) || request.context?.includes(ARCHITECTURE_GATE_SKILL_PATH)) return "";
+	return `\n\n## Packaged skill paths\n- \`gentle-ai-architecture-gate\`: ${ARCHITECTURE_GATE_SKILL_PATH}`;
+}
+
 export function promptText(request: TaskRequest): string {
-	return request.context ? `${request.prompt}\n\n## Context\n${request.context}` : request.prompt;
+	const prompt = request.prompt + packagedSkillPaths(request);
+	return request.context ? `${prompt}\n\n## Context\n${request.context}` : prompt;
 }
 
 export class AgentRunner {

@@ -12,12 +12,14 @@ function readSkillName(dir: string): string | undefined {
 }
 
 const PREFIXED_NAMES: Record<string, string> = {
+	"architecture-gate": "gentle-ai-architecture-gate",
 	"branch-pr": "gentle-ai-branch-pr",
 	"chained-pr": "gentle-ai-chained-pr",
 	"cognitive-doc-design": "gentle-ai-cognitive-doc-design",
 	"comment-writer": "gentle-ai-comment-writer",
 	"issue-creation": "gentle-ai-issue-creation",
 	"judgment-day": "gentle-ai-judgment-day",
+	"provider-defect-report": "gentle-ai-provider-defect-report",
 	"rdd-defect-workflow": "gentle-ai-rdd-defect-workflow",
 	"skill-creator": "gentle-ai-skill-creator",
 	"skill-improver": "gentle-ai-skill-improver",

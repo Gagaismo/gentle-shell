@@ -73,7 +73,11 @@ test("rendered parent prompt keeps the RDD boundary while omitting lifecycle mir
 		rendered.includes("Receipt-driven development: unknown (native status unavailable)"),
 		"the default render must include the worst-case RDD status line",
 	);
-	assert.ok(Buffer.byteLength(rendered, "utf8") <= 9350, "the rendered parent prompt must stay within the 9,350 B core budget");
+	// 2026-11-17 user decision: architect routing trigger (odd/tasks/architect-agent.md S6): 9,350 -> 9,567 -> 9,598 B
+	// (deployable backend/service wording), the canonical budget measured at the 128-char root in orchestrator-budget.test.ts.
+	// upstream v4.9.0 merge: fork architect trigger (+421 B) plus upstream v4.9.0 net additions, measured 9,768 B
+	// at the 128-char root, same as orchestrator-budget.test.ts: 9,598 -> 9,768 B.
+	assert.ok(Buffer.byteLength(rendered, "utf8") <= 9768, "the rendered parent prompt must stay within the 9,768 B core budget");
 });
 
 test("static prompts retain ODD and delegated-work guidance without SDD", () => {

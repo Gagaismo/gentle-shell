@@ -8,6 +8,7 @@ const roles: Record<string, string[]> = {
 	"gentle-ai-explore.md": ["read", "grep", "find", "codegraph", "web_enable", "web_search", "source_check", "fetch_content", "get_search_content", "mcp__codegraph__codegraph_explore"],
 	"gentle-ai-worker.md": ["read", "grep", "find", "edit", "write", "bash", "mem_save", "mcp__codegraph__codegraph_explore"],
 	"gentle-ai-verify.md": ["read", "grep", "find", "bash", "mcp__codegraph__codegraph_explore"],
+	"gentle-ai-architect.md": ["read", "grep", "find", "ls", "web_enable", "web_search", "source_check", "fetch_content", "get_search_content"],
 };
 
 function tools(file: string): string[] {
@@ -60,6 +61,19 @@ test("economical explorer retrieves web evidence directly without broader child 
 	const handoff = readFileSync(join(process.cwd(), "assets", "orchestrator-prompts.md"), "utf8");
 	assert.match(handoff, /configured model and thinking/);
 	assert.doesNotMatch(handoff, /parent obtains online evidence using its existing web tools/);
+});
+
+test("the architect is strictly read-only and carries the explorer's web tools block", () => {
+	const architect = tools("gentle-ai-architect.md");
+	for (const name of ["edit", "write", "bash", "powershell", "mem_save", "codegraph", "subagent_run"]) {
+		assert.equal(architect.includes(name), false, `architect must not gain ${name}`);
+	}
+	const web = ["web_enable", "web_search", "source_check", "fetch_content", "get_search_content"];
+	assert.deepEqual(tools("gentle-ai-explore.md").filter(name => web.includes(name)), web, "the explorer still declares the web block");
+	assert.deepEqual(architect.filter(name => web.includes(name)), web, "the architect declares the same web block in the same order");
+	const source = readFileSync(join(agents, "gentle-ai-architect.md"), "utf8");
+	assert.match(source, /You never write files, implementation code, schemas, or Dockerfiles\./);
+	assert.match(source, /Read and search only\. Do not edit, write, run commands, or mutate project state\./);
 });
 
 test("retired Pi adversarial role agents are not packaged", () => {

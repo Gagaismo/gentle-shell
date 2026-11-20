@@ -431,20 +431,20 @@ test("package manifest installs pi-pretty through a wrapper without bundling nat
 	);
 });
 
-test("package verification binds the published Gentle AI v4.5.0 runtime pin", () => {
+test("package verification binds the published Gentle AI v4.6.0 runtime pin", () => {
 	const installer = readFileSync(join(PACKAGE_ROOT, "scripts", "gentle-ai-installer.mjs"), "utf8");
 	const binary = readFileSync(join(PACKAGE_ROOT, "lib", "gentle-ai-binary.ts"), "utf8");
 	const verifier = readFileSync(join(PACKAGE_ROOT, "scripts", "verify-package-files.mjs"), "utf8");
 
-	assert.match(installer, /INSTALLER_VERSION = "4\.5\.0"/);
+	assert.match(installer, /INSTALLER_VERSION = "4\.6\.0"/);
 	assert.match(installer, /GENTLE_AI_WINDOWS_SOURCE_PACKAGE.*GENTLE_AI_WINDOWS_SOURCE_MODULE/);
-	assert.match(installer, /GENTLE_AI_WINDOWS_SOURCE_MODULE_CHECKSUM = "h1:81Hsy\+cboAbUse1ORVJuwji6V9sRIGlFwC73EtMdw0c="/);
+	assert.match(installer, /GENTLE_AI_WINDOWS_SOURCE_MODULE_CHECKSUM = "h1:FXR0FEGvnov6eCf\/FR7Ey8PfxxdhbDHq1\/WnkjpA1AQ="/);
 	assert.match(installer, /GOTOOLCHAIN: "local"/);
 	assert.match(installer, /GOSUMDB: "sum\.golang\.org"/);
 	assert.match(binary, /GENTLE_AI_VERSION = INSTALLER_VERSION/);
 	assert.match(binary, /GO_SUMDB_SOURCE_BUILD/);
 	assert.match(binary, /GENTLE_AI_WINDOWS_SOURCE_MODULE_CHECKSUM/);
-	assert.match(verifier, /v4\.5\.0/);
+	assert.match(verifier, /v\$\{INSTALLER_VERSION\} runtime pin/);
 });
 
 
@@ -854,15 +854,16 @@ test("selective delegation installation owns only generic agents", () => {
 	withIsolatedAssetHome((agentHome) => {
 		const result = installPackageAssets(agentHome, false, ["delegation"]);
 		assert.deepEqual(Object.keys(installedAssetManifest(agentHome).assets).sort(), [
+			"agents/gentle-ai-architect.md",
 			"agents/gentle-ai-explore.md",
 			"agents/gentle-ai-verify.md",
 			"agents/gentle-ai-worker.md",
 			"gentle-ai/support/strict-tdd-verify.md",
 			"gentle-ai/support/strict-tdd.md",
 		]);
-		assert.deepEqual(result, { agents: 3, chains: 0, support: 2, skipped: 0 });
+		assert.deepEqual(result, { agents: 4, chains: 0, support: 2, skipped: 0 });
 		assert.deepEqual(readdirSync(join(agentHome, "agents")).sort(), [
-			"gentle-ai-explore.md", "gentle-ai-verify.md", "gentle-ai-worker.md",
+			"gentle-ai-architect.md", "gentle-ai-explore.md", "gentle-ai-verify.md", "gentle-ai-worker.md",
 		]);
 		assert.equal(existsSync(join(agentHome, "chains")), false);
 		assert.deepEqual(readdirSync(join(agentHome, "gentle-ai", "support")).sort(), ["strict-tdd-verify.md", "strict-tdd.md"]);
@@ -898,7 +899,7 @@ test("selective installation retires only assets belonging to the selected owner
 
 const EXPECTED_OWNER_ASSETS: Record<PackageAssetOwner, readonly string[]> = {
 	delegation: [
-		"agents/gentle-ai-explore.md", "agents/gentle-ai-verify.md", "agents/gentle-ai-worker.md",
+		"agents/gentle-ai-architect.md", "agents/gentle-ai-explore.md", "agents/gentle-ai-verify.md", "agents/gentle-ai-worker.md",
 		"gentle-ai/support/strict-tdd.md", "gentle-ai/support/strict-tdd-verify.md",
 	],
 	review: [
@@ -944,10 +945,10 @@ test("all-assets installation covers every retained packaged file with explicit 
 		assert.equal(getPackageAssetOwner(key), undefined, "unknown assets must not default to SDD");
 	}
 	withIsolatedAssetHome((agentHome) => {
-		assert.deepEqual(installPackageAssets(agentHome, false), { agents: 10, chains: 1, support: 2, skipped: 0 });
+		assert.deepEqual(installPackageAssets(agentHome, false), { agents: 11, chains: 1, support: 2, skipped: 0 });
 		assert.deepEqual(Object.keys(installedAssetManifest(agentHome).assets).sort(), packaged);
-		assert.deepEqual(installPackageAssets(agentHome, false), { agents: 0, chains: 0, support: 0, skipped: 13 });
-		assert.deepEqual(installPackageAssets(agentHome, true), { agents: 10, chains: 1, support: 2, skipped: 0 });
+		assert.deepEqual(installPackageAssets(agentHome, false), { agents: 0, chains: 0, support: 0, skipped: 14 });
+		assert.deepEqual(installPackageAssets(agentHome, true), { agents: 11, chains: 1, support: 2, skipped: 0 });
 	});
 });
 
@@ -961,7 +962,7 @@ test("selective refresh preserves unselected ownership and selected user changes
 			writeFileSync(join(agentHome, key), "User-authored instructions\n");
 		}
 		const before = new Map(assetFileKeys(agentHome).map(key => [key, readFileSync(join(agentHome, key), "utf8")]));
-		assert.deepEqual(installPackageAssets(agentHome, true, ["delegation"]), { agents: 2, chains: 0, support: 2, skipped: 1 });
+		assert.deepEqual(installPackageAssets(agentHome, true, ["delegation"]), { agents: 3, chains: 0, support: 2, skipped: 1 });
 		delete manifest.assets[selectedUserKey];
 		assert.deepEqual(installedAssetManifest(agentHome), manifest);
 		for (const [key, content] of before) {
@@ -1645,10 +1646,10 @@ test("gentle-ai-worker packages the exact scoped writer contract", () => {
 	const contextContract = readMarkdownSection(source, "Context contract");
 	assert.match(contextContract, /pre-existing untracked targets explicitly listed by the parent/);
 	assert.match(contextContract, /new files required by the delegated task/);
-	assert.match(contextContract, /derived candidate set the human can approve or narrow/);
-	assert.match(contextContract, /never an open request for the human to author paths or globs/);
-	assert.match(interactionContract, /closed set the human can approve, decline, or select from/);
-	assert.match(interactionContract, /never ask the human to author paths, globs, identifiers, or commands as free text/);
+	assert.match(contextContract, /derived candidate set the parent can approve, narrow, or route to the human/);
+	assert.match(contextContract, /never an open request for anyone to author paths or globs/);
+	assert.match(interactionContract, /closed set the decision owner can approve, decline, or select from/);
+	assert.match(interactionContract, /never ask anyone to author paths, globs, identifiers, or commands as free text/);
 
 	const implementationRules = readMarkdownSection(source, "Implementation rules");
 	assert.match(implementationRules, /`blocked` only for a non-human technical blocker/);
@@ -1949,9 +1950,9 @@ test("pi-pretty wrapper uses cached ESM loading for compiled and pnpm symlink in
 	assert.match(wrapper, /quietToolsEnabled/);
 });
 
-test("Gentle Shell v4.8.0 package manifest declares the release version", () => {
+test("Gentle Shell v4.9.0 package manifest declares the release version", () => {
 	const packageJson = readPackageJson();
-	assert.equal(packageJson.version, "4.8.0", "the release manifest must be explicitly pinned to v4.8.0");
+	assert.equal(packageJson.version, "4.9.0", "the release manifest must be explicitly pinned to v4.9.0");
 	assert.equal(packageJson.scripts?.test, "node scripts/run-test-suite.mjs");
 	assert.ok(packageJson.files?.includes("assets/"));
 	assert.ok(packageJson.files?.includes("contracts/"));

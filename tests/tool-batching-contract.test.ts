@@ -23,7 +23,7 @@ function declaredTools(prompt: string): string[] {
 }
 
 test("S13 C9: every generic subagent prompt batches independent tool calls in one turn", () => {
-	for (const agent of ["gentle-ai-worker", "gentle-ai-verify", "gentle-ai-explore"]) {
+	for (const agent of ["gentle-ai-worker", "gentle-ai-verify", "gentle-ai-explore", "gentle-ai-architect"]) {
 		const prompt = read(`assets/agents/${agent}.md`);
 		const rule = prompt.split("\n").find((line) => line.includes("**Batch tool calls:**"));
 		assert.ok(rule, `${agent} must carry the batch tool calls rule`);

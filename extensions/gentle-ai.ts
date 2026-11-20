@@ -5,12 +5,13 @@ import { isDeepStrictEqual } from "node:util";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendSystemPromptOnce } from "../lib/append-system-prompt.ts";
 import { filterChildSessionContextFiles, type ContextFileOptions } from "../lib/child-context-files.ts";
+import { orcaStackPanelControl, type OrcaStackPanelControl } from "../lib/orca-stack-toggle.ts";
 import { dataArgumentRanges, recognizeDestructiveCommands } from "../lib/destructive-command-guard.ts";
 import { defaultTempScratchFs, isTempScratchRemoval, type TempScratchFs } from "../lib/yolo-temp-scratch.ts";
 import { SHELL_COMMAND_TOOLS } from "../lib/background-jobs.ts";
 import { evaluateDeliveredTestTool } from "../lib/delivered-test-lint.ts";
 import { commitSliceToolResult } from "../lib/commit-slice-signal.ts";
-import { checkReviewDeliveryPreflight, committedRangeUntrackedExclusion } from "../lib/review-delivery-preflight.ts";
+import { checkReviewDeliveryPreflight, committedRangeUntrackedExclusion, runOrcaStackEstado } from "../lib/review-delivery-preflight.ts";
 import { withReviewerProgress } from "../lib/reviewer-stream.ts";
 import { checkDeliveryConflictMarkers } from "../lib/delivery-conflict-markers.ts";
 import { appendContextBackstopNotice, createContextBackstopSignal, createThrottledContextMeasure } from "../lib/context-backstop.ts";
@@ -322,6 +323,7 @@ import { AutoPermissionRuntime, updateAutoPrompt, type AutoRuntimeClassifier } f
 import { AutoPermissionClassifier } from "../lib/auto-permission-classifier.ts";
 import { acquireChildStandingReviewPermissionClient, type ChildStandingReviewPermissionClient } from "../lib/review-session-standing-permission-ipc.ts";
 import { isPiConsentV3, presentReviewConsentUi } from "../lib/review-consent-ui.ts";
+import { ORCA_STACK_CONSENT_ANSWERED, readOrcaStackConsentPolicy } from "../lib/review-consent-policy.ts";
 import {
 	captureReviewSessionIdentity,
 	grantReviewSessionPermission,
@@ -4315,6 +4317,9 @@ class RoutingTablePanel implements OverlayComponent {
 	private pickingFallback = false;
 	private fallbackCursor = 0;
 	private readonly fallbacks: RoutingFallbacks | undefined;
+	/** Fork: the per-project orca-stack toggle (`o`), present only in an orca-stack project. */
+	private readonly orcaStack: OrcaStackPanelControl | undefined;
+	private orcaStackState: "on" | "off" | undefined;
 	private target: string = PROFILE_ORCHESTRATOR_KEY;
 	private pending: RoutingTableResult | undefined;
 	private cursor = 0;
@@ -4369,10 +4374,13 @@ class RoutingTablePanel implements OverlayComponent {
 			switchProfile?: RoutingProfileSwitcher;
 			fallbacks?: RoutingFallbacks;
 			modeDraft?: OrchestratorMode;
+			orcaStack?: OrcaStackPanelControl;
 		} = {},
 	) {
 		this.switchProfile = options.switchProfile;
 		this.fallbacks = options.fallbacks;
+		this.orcaStack = options.orcaStack;
+		this.orcaStackState = options.orcaStack?.read();
 		this.thinkingSupport = options.thinkingSupport ?? {};
 		this.fastModels = new Set(options.fastModels ?? []);
 		this.notices = options.notices ?? [];
@@ -4733,6 +4741,14 @@ class RoutingTablePanel implements OverlayComponent {
 		this.say(`Orchestrator mode ${this.modeDraft}. Save keeps it in ${this.profileName}.`);
 	}
 
+	/** Fork: `o` stores the project's orca-stack choice at once; it is not a profile draft. */
+	private toggleOrcaStack(control: OrcaStackPanelControl): void {
+		const next = this.orcaStackState === "off" ? "on" : "off";
+		const error = control.write(next);
+		if (error === undefined) this.orcaStackState = next;
+		this.say(error ?? `orca-stack ${next} for this project: the next turn ${next === "off" ? "drops" : "loads"} the orca-stack contract.`);
+	}
+
 	private setAllFast(): void {
 		let count = 0;
 		for (const key of [PROFILE_ORCHESTRATOR_KEY, ...this.agents]) {
@@ -4925,6 +4941,7 @@ class RoutingTablePanel implements OverlayComponent {
 		if (matchesKey(data, "f")) return this.openFallbacks(this.rows[this.cursor] ?? PROFILE_ORCHESTRATOR_KEY);
 		if (matchesKey(data, "t")) return this.toggleTier(this.rows[this.cursor] ?? PROFILE_ORCHESTRATOR_KEY);
 		if (matchesKey(data, "w")) return this.toggleOrchestratorMode();
+		if (matchesKey(data, "o") && this.orcaStack) return this.toggleOrcaStack(this.orcaStack);
 		if (matchesKey(data, "a")) return this.setAllFast();
 		if (matchesKey(data, "s") || matchesKey(data, "ctrl+s")) return this.pressButton("save");
 		if (matchesKey(data, "u")) return this.pressButton("use");
@@ -5319,14 +5336,16 @@ class RoutingTablePanel implements OverlayComponent {
 		const budget = inner - 1;
 		const chosen = new Set<number>();
 		let used = 0;
-		const byPriority = ROUTING_TABLE_HINTS.map((hint, index) => ({ ...hint, index })).sort((a, b) => a.keep - b.keep);
+		// Fork: an orca-stack project adds its toggle's state; it outranks every other hint.
+		const hints = this.orcaStack ? [...ROUTING_TABLE_HINTS, { text: `o orca-stack: ${this.orcaStackState}`, keep: 0 }] : ROUTING_TABLE_HINTS;
+		const byPriority = hints.map((hint, index) => ({ ...hint, index })).sort((a, b) => a.keep - b.keep);
 		for (const hint of byPriority) {
 			const cost = visibleWidth(hint.text) + (chosen.size > 0 ? 2 : 0);
 			if (used + cost > budget) continue;
 			chosen.add(hint.index);
 			used += cost;
 		}
-		return ` ${ROUTING_TABLE_HINTS.filter((_, index) => chosen.has(index)).map((hint) => hint.text).join("  ")}`;
+		return ` ${hints.filter((_, index) => chosen.has(index)).map((hint) => hint.text).join("  ")}`;
 	}
 
 	/**
@@ -5669,6 +5688,7 @@ function renderRoutingTableForTesting(
 		fastModels?: string[];
 		notices?: string[];
 		fallbacks?: RoutingFallbacks;
+		orcaStack?: OrcaStackPanelControl;
 	} = {},
 ): string[] {
 	const panel = new RoutingTablePanel(
@@ -5827,6 +5847,7 @@ async function showRoutingTablePanel(
 					switchProfile: request.switchProfile,
 					fallbacks: fileRoutingFallbacks(gentleAiConfigHome()),
 					modeDraft: request.modeDraft,
+					orcaStack: orcaStackPanelControl(ctx.sessionManager?.getCwd?.() ?? ctx.cwd),
 				},
 			);
 			const container = createNativeFullscreenInteraction({
@@ -12760,10 +12781,16 @@ function createGentleAiExtensionForTesting(
 					// The successful native operation above remains authoritative; an
 					// unresolvable local binding simply cannot consume host permission.
 				}
-				const initialIdentity = permissionWorkspaceRoot === undefined
+				// odd/tasks/orca-main-autonomo.md G2: in a linked worktree with an
+				// orca-stack consent policy file, the policy answers instead of the
+				// UI or the parent relay, through the same native answer path.
+				const orcaStackPolicy = eligiblePending === undefined ? undefined : await readOrcaStackConsentPolicy(eligiblePending.authorityCwd);
+				const initialIdentity = orcaStackPolicy !== undefined || permissionWorkspaceRoot === undefined
 					? undefined
 					: await capturePermissionIdentity(ctx, permissionWorkspaceRoot);
-				if (eligiblePending !== undefined && initialIdentity === undefined) {
+				if (eligiblePending !== undefined && orcaStackPolicy !== undefined) {
+					details = { ...(await answerPendingConsent(orcaStackPolicy.answer)), consentAnsweredBy: ORCA_STACK_CONSENT_ANSWERED(orcaStackPolicy.answer, orcaStackPolicy.path) };
+				} else if (eligiblePending !== undefined && initialIdentity === undefined) {
 					// A package child has no local standing grant. It may ask its
 					// inherited parent only for the canonical repository identity of
 					// this exact pending target, then replay this local binding once.
@@ -13414,7 +13441,9 @@ function createGentleAiExtensionForTesting(
 		const deliveryDenied = await checkReviewDeliveryPreflight(ctx.cwd, event.toolName, command, nativeReviewCli,
 			root => processRetainedNativeStatusSelections.get(sessionKey)?.readCommittedRange(root),
 			(root, target) => readNativeReviewOutcome(root, target) === "declined", ctx.signal,
-			() => deliveryEpoch === reminderEpoch && modeEpoch === yolo.epoch() && pendingReviewConsentSessionKey(ctx, pendingReviewConsentFallbackKey) === sessionKey);
+			() => deliveryEpoch === reminderEpoch && modeEpoch === yolo.epoch() && pendingReviewConsentSessionKey(ctx, pendingReviewConsentFallbackKey) === sessionKey,
+			// odd/tasks/orca-main-autonomo.md G1: the guard itself asks orca-stack for the merge attestation.
+			(root, pr, attestSignal) => runOrcaStackEstado(root, pr, attestSignal));
 		// cost-speed P9: after the RDD preflight (its denials win unchanged), independent of RDD mode; fails open.
 		// It runs BEFORE the epoch recheck below: no await may sit between that recheck and the return.
 		const markerDenied = !deliveryDenied && primaryToolCall ? await checkDeliveryConflictMarkers(ctx.cwd, command, ctx.signal) : undefined;

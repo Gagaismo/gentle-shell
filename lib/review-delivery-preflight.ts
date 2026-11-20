@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join, resolve, win32 } from "node:path";
-import { NATIVE_UNTRACKED_SCOPE, type NativeReviewCli } from "./native-review-cli.ts";
+import { NATIVE_UNTRACKED_SCOPE, normalizeNativeReviewCwd, type NativeReviewCli } from "./native-review-cli.ts";
 import { recognizeReviewDeliveryActions, type ReviewDeliveryMerge } from "./destructive-command-guard.ts";
 import { resolvePiScriptFromCmd } from "./agents-runner.ts";
 import { findWorktreeRoot, ORCA_STACK_CONFIG_FILE } from "./orca-stack-toggle.ts";
@@ -151,16 +151,18 @@ export async function checkReviewDeliveryPreflight(cwd: string, toolName: string
 		? { block: true, reason: `${denial.reason} The orca-stack attestation did not apply: ${notApplied}.` } : denial;
 	if (deliveries.some(delivery => delivery.unresolvedDirectory)) return explain(deny("The delivery repository cannot be resolved from this directory or Git/environment redirect; run delivery inside its repository or use literal cd or git -C."));
 	if (signal?.aborted || !current()) return explain(deny("Preflight was cancelled or its session changed."));
-	const bounded = AbortSignal.any([AbortSignal.timeout(attestation ? ATTESTED_PREFLIGHT_MS : 10_000), ...(signal ? [signal] : [])]);
+	const bounded = AbortSignal.any([AbortSignal.timeout(attestation ? ATTESTED_PREFLIGHT_MS : 30_000), ...(signal ? [signal] : [])]);
 	let abort!: () => void;
 	const expired = new Promise<Denial>(done => { abort = () => done(deny("The bounded preflight was cancelled or timed out.")); bounded.addEventListener("abort", abort, { once: true }); });
 	const run = async (): Promise<Denial | undefined> => {
 		try {
 			const checked: Array<{ root: string; baseRef: string; before: string }> = [];
 			const roots = new Set(deliveries.map(delivery => {
-				const target = (delivery.directories ?? []).reduce((base, directory) => resolve(base, directory), cwd);
+				// Git Bash drive paths (`/c/repo`) name `C:\repo` on Windows; resolving them raw yields `C:\c\repo`.
+				const target = (delivery.directories ?? []).reduce((base, directory) => resolve(base, normalizeNativeReviewCwd(directory)), cwd);
 				return resolveSessionWorktree(target, cwd)?.root ?? target;
 			}));
+			if ([...roots].some(root => !existsSync(root))) return deny("The delivery repository cannot be resolved from this directory or Git/environment redirect; run delivery inside its repository or use literal cd or git -C.");
 			for (const root of roots) {
 				const mode = await cli.reviewMode!({ cwd: root, operation: "status", signal: bounded });
 				if (bounded.aborted || !current()) return deny("Session changed during preflight; assess again.");

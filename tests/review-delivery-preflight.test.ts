@@ -594,3 +594,29 @@ test("G1: the default estado runner passes fixed arguments without a shell and r
 	assert.deepEqual(JSON.parse(run.stdout).argv, ["estado", "42", "--json"]);
 	assert.equal(realpathSync(JSON.parse(run.stdout).cwd), realpathSync(bin));
 });
+
+test("Git Bash drive paths in cd and git -C reach native preflight as the Windows repository path", { skip: process.platform !== "win32" && "Git Bash drive paths only apply on Windows" }, async t => {
+	const root = realpathSync.native(mkdtempSync(join(tmpdir(), "review-delivery-gitbash-")));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	const gitBash = `/${root[0]!.toLowerCase()}/${root.slice(3).replace(/\\/g, "/")}`;
+	const cwds: string[] = [];
+	const cli = { reviewMode: async (request: { cwd: string }) => { cwds.push(request.cwd); return { status: { effective: "off" } }; } } as unknown as NativeReviewCli;
+	for (const command of [`cd ${gitBash} && git push origin HEAD`, `git -C ${gitBash} push origin HEAD`, `cd "${root}" && git push origin HEAD`]) {
+		cwds.length = 0;
+		assert.equal(await checkReviewDeliveryPreflight(tmpdir(), "bash", command, cli, () => undefined, () => false), undefined, command);
+		assert.deepEqual(cwds, [root], command);
+	}
+	cwds.length = 0;
+	assert.equal(await checkReviewDeliveryPreflight(root, "bash", "git push origin HEAD", cli, () => undefined, () => false), undefined, "no-cd delivery keeps the session directory");
+	assert.deepEqual(cwds, [root]);
+});
+
+test("a delivery directory that does not exist is denied as unresolved before native preflight", async t => {
+	const root = mkdtempSync(join(tmpdir(), "review-delivery-missing-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const cli = { reviewMode: async () => assert.fail("no native mode read for a missing repository") } as unknown as NativeReviewCli;
+	const result = await checkReviewDeliveryPreflight(root, "bash", `git -C "${join(root, "missing")}" push origin HEAD`, cli, () => undefined, () => false);
+	assert.equal(result?.block, true);
+	assert.match(result!.reason, /The delivery repository cannot be resolved/);
+});

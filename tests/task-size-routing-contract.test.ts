@@ -180,7 +180,9 @@ const MODULE_BUDGETS: Record<string, number> = {
 	// phrases that restated their sentence (-36 B): 8,656 -> 8,648 B.
 	// gentle-shell#3082: the terminal disposition exit stays self-contained in the lazy module (+233 B over 8,648):
 	// 8,648 -> 8,900 B.
-	"orchestrator-verification.md": 8_900,
+	// Gagaismo/orca-stack#436: the parent relays verify's `Sugerencia:` lines and never runs the skill (+233 B):
+	// 8,900 -> 9,133 B.
+	"orchestrator-verification.md": 9_133,
 	// Writer-rule fix (size threshold, one behavior per unit) and C3 (writer prompts name the helpers and
 	// invariants to reuse): 4,500 -> 5,300 B.
 	// Pain-point iteration S10 (C7): writer handoffs keep test scratch outside the worktree (5,300 -> 5,500 B).

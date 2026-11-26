@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 
 const CONVENTIONAL = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+/;
+const GIT_REVERT = /^Revert ".+"$/;
 const USAGE = "usage: node scripts/orca-check-commits.mjs <base>..<head> [--exclude <ref>]...";
 
 function parseArgs(argv) {
@@ -12,6 +13,7 @@ function parseArgs(argv) {
 		if (arg === "--exclude") {
 			const ref = argv[++i];
 			if (!ref) return { error: "--exclude needs a ref" };
+			if (ref.startsWith("-")) return { error: `--exclude needs a ref, got a flag: ${ref}` };
 			excluded.push(ref);
 		} else if (range === undefined && !arg.startsWith("-")) {
 			range = arg;
@@ -42,7 +44,7 @@ const commits = git.stdout.split("\n").filter(Boolean).map((line) => {
 	const [sha, subject] = line.split("\0");
 	return { sha, subject };
 });
-const offending = commits.filter(({ subject }) => !CONVENTIONAL.test(subject));
+const offending = commits.filter(({ subject }) => !CONVENTIONAL.test(subject) && !GIT_REVERT.test(subject));
 
 for (const { sha, subject } of offending) process.stdout.write(`${sha.slice(0, 7)} ${subject}\n`);
 const noun = commits.length === 1 ? "commit" : "commits";

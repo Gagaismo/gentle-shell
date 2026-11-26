@@ -77,3 +77,59 @@ test("a merge commit with a non-conventional subject is ignored", (t) => {
 	assert.match(result.stdout, /2 commits/);
 	assert.doesNotMatch(result.stdout, /Merge branch/);
 });
+
+test("a missing revision range exits 2 with usage", (t) => {
+	const repo = makeRepo();
+	t.after(repo.cleanup);
+	const result = check(repo.dir);
+	assert.equal(result.status, 2, result.stdout + result.stderr);
+	assert.match(result.stderr, /^missing revision range$/m);
+	assert.match(result.stderr, /^usage: /m);
+	assert.equal(result.stdout, "");
+});
+
+test("--exclude without a ref exits 2", (t) => {
+	const repo = makeRepo();
+	t.after(repo.cleanup);
+	const result = check(repo.dir, `${repo.base}..HEAD`, "--exclude");
+	assert.equal(result.status, 2, result.stdout + result.stderr);
+	assert.match(result.stderr, /^--exclude needs a ref$/m);
+	assert.equal(result.stdout, "");
+});
+
+test("--exclude followed by a flag-like value exits 2 instead of negating every ref", (t) => {
+	const repo = makeRepo();
+	t.after(repo.cleanup);
+	repo.commit("Update stuff");
+	const result = check(repo.dir, `${repo.base}..HEAD`, "--exclude", "--all");
+	assert.equal(result.status, 2, result.stdout + result.stderr);
+	assert.match(result.stderr, /^--exclude needs a ref, got a flag: --all$/m);
+	assert.equal(result.stdout, "");
+});
+
+test("an unknown revision exits 2", (t) => {
+	const repo = makeRepo();
+	t.after(repo.cleanup);
+	const result = check(repo.dir, "no-such-ref..HEAD");
+	assert.equal(result.status, 2, result.stdout + result.stderr);
+	assert.notEqual(result.stderr, "");
+	assert.equal(result.stdout, "");
+});
+
+test("a git-generated revert subject passes", (t) => {
+	const repo = makeRepo();
+	t.after(repo.cleanup);
+	repo.commit('Revert "feat: add x"');
+	const result = check(repo.dir, `${repo.base}..HEAD`);
+	assert.equal(result.status, 0, result.stdout + result.stderr);
+	assert.match(result.stdout, /^1 commit checked/m);
+});
+
+test("a bare Revert subject without the quoted original still fails", (t) => {
+	const repo = makeRepo();
+	t.after(repo.cleanup);
+	const bad = repo.commit("Revert stuff");
+	const result = check(repo.dir, `${repo.base}..HEAD`);
+	assert.equal(result.status, 1, result.stdout + result.stderr);
+	assert.match(result.stdout, new RegExp(`^${bad.slice(0, 7)} Revert stuff$`, "m"));
+});

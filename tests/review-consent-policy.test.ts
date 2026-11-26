@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, before } from "node:test";
@@ -102,7 +102,7 @@ function startStatus(cwd: string): ReviewStatusV3 {
 	} finally { views.cleanup(candidate.token); }
 }
 
-function harness(cwd: string) {
+function harness(cwd: string, views: CandidateViewRegistry[]) {
 	const tools = new Map<string, { execute(id: string, parameters: unknown, signal: undefined, onUpdate: undefined, context: ExtensionContext): Promise<{ content: Array<{ text: string }>; details: Record<string, unknown> }> }>();
 	const answers: string[] = [];
 	const consent = piConsent();
@@ -117,7 +117,9 @@ function harness(cwd: string) {
 			return { kind: "started", start: { lineageId: `lineage-${answers.length}`, state: "approved", riskLevel: "high", selectedLenses: [], changedFiles: 1, changedLines: 2, correctionBudget: 0, action: "closed", lensesRequired: false, riskReasons: [] } };
 		},
 	} as unknown as NativeReviewCli;
-	createGentleAiExtension({ nativeReviewCli: native, candidateViews: new CandidateViewRegistry(), processEnv: {} })({
+	const candidateViews = new CandidateViewRegistry();
+	views.push(candidateViews);
+	createGentleAiExtension({ nativeReviewCli: native, candidateViews, processEnv: {} })({
 		on() {}, registerCommand() {}, registerTool(definition: { name: string }) { tools.set(definition.name, definition as never); }, events: { emit() {} },
 	} as unknown as ExtensionAPI);
 	let prompts = 0;
@@ -129,8 +131,14 @@ function harness(cwd: string) {
 
 test("G2 host: the policy answers instead of the dialog, through the same native answer, and says so", async t => {
 	const scratch = realpathSync(mkdtempSync(join(tmpdir(), "review-consent-host-")));
-	t.after(() => rmSync(scratch, { recursive: true, force: true }));
 	const main = join(scratch, "main"), linked = join(scratch, "linked");
+	const views: CandidateViewRegistry[] = [];
+	t.after(() => {
+		for (const registry of views) registry.cleanupAll();
+		const owned = join(main, ".git", "gentle-ai", "candidate-views");
+		if (existsSync(owned)) assert.deepEqual(readdirSync(owned), [], "every read-only candidate view is restored and removed before the scratch cleanup");
+		rmSync(scratch, { recursive: true, force: true });
+	});
 	mkdirSync(main);
 	const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" }).trim();
 	git(main, "init", "-q", "-b", "main"); writeFileSync(join(main, "app.ts"), "export const value = 1;\n"); git(main, "add", "."); git(main, "commit", "-qm", "base");
@@ -143,7 +151,7 @@ test("G2 host: the policy answers instead of the dialog, through the same native
 	process.env.GENTLE_PI_ORCA_RDD_POLICY = "1";
 	t.after(() => { delete process.env.GENTLE_PI_ORCA_RDD_POLICY; });
 	policy(git(linked, "rev-parse", "--absolute-git-dir"), []);
-	const declinedRun = harness(linked);
+	const declinedRun = harness(linked, views);
 	const declined = await declinedRun.start();
 	assert.equal(declined.details.outcome, "consent-declined-this-candidate", "recorded exactly as a declined dialog answer");
 	assert.match(String(declined.details.consentAnsweredBy), /orca-stack policy answered declined/);
@@ -152,14 +160,14 @@ test("G2 host: the policy answers instead of the dialog, through the same native
 	assert.equal(declinedRun.prompts(), 0, "no consent dialog is shown");
 
 	policy(git(linked, "rev-parse", "--absolute-git-dir"), [head]);
-	const grantedRun = harness(linked);
+	const grantedRun = harness(linked, views);
 	const granted = await grantedRun.start();
 	assert.deepEqual(grantedRun.answers, ["granted"]);
 	assert.match(String(granted.details.consentAnsweredBy), /orca-stack policy answered granted/);
 	assert.equal(grantedRun.prompts(), 0);
 
 	policy(join(main, ".git"), [git(main, "rev-parse", "HEAD")]);
-	const mainRun = harness(main);
+	const mainRun = harness(main, views);
 	const asked = await mainRun.start();
 	assert.equal(asked.details.outcome, "native-review-consent-required", "the main checkout keeps today's dialog");
 	assert.equal(asked.details.consentAnsweredBy, undefined);

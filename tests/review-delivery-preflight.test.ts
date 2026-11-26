@@ -587,7 +587,7 @@ test("G1: the default estado runner passes fixed arguments without a shell and r
 	const script = join(bin, "fake-orca-stack.mjs");
 	writeFileSync(script, "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() })); process.exitCode = 3;\n");
 	if (process.platform === "win32") writeFileSync(join(bin, "orca-stack.cmd"), `@echo off\r\nnode "${script}" %*\r\n`);
-	else { writeFileSync(join(bin, "orca-stack"), `#!/bin/sh\nexec node "${script}" "$@"\n`); chmodSync(join(bin, "orca-stack"), 0o755); }
+	else { writeFileSync(join(bin, "orca-stack"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`); chmodSync(join(bin, "orca-stack"), 0o755); }
 	const run = await runOrcaStackEstado(bin, 42, AbortSignal.timeout(10_000), { ...process.env, PATH: bin, Path: bin });
 	assert.ok("exitCode" in run, JSON.stringify(run));
 	assert.equal(run.exitCode, 3);

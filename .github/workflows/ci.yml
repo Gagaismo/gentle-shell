@@ -331,3 +331,82 @@ jobs:
           path: ${{ runner.temp }}/node-dumps
           if-no-files-found: ignore
           retention-days: 14
+
+  commit-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+
+      - name: Fetch upstream main
+        run: git fetch --no-tags https://github.com/Gentleman-Programming/gentle-shell.git main:refs/remotes/upstream/main
+
+      - name: Check commit subjects
+        run: node scripts/orca-check-commits.mjs "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" --exclude refs/remotes/upstream/main
+
+  secrets:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream main
+        run: git fetch --no-tags https://github.com/Gentleman-Programming/gentle-shell.git main:refs/remotes/upstream/main
+
+      - name: Install gitleaks
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/gitleaks" gitleaks
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
+
+      - name: Scan PR commits with gitleaks
+        run: gitleaks git --redact --no-banner --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} --not refs/remotes/upstream/main" .
+
+  ci-ok:
+    if: always()
+    needs:
+      - verify
+      - session-transport-macos
+      - review-routing-focused-windows
+      - review-repository-windows
+      - installer
+      - commit-lint
+      - secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to pass
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          node -e '
+            const needs = JSON.parse(process.env.NEEDS);
+            const prOnly = ["commit-lint", "secrets", "review-routing-focused-windows"];
+            const passing = (name, result) => result === "success" || (result === "skipped" && process.env.EVENT_NAME !== "pull_request" && prOnly.includes(name));
+            for (const [name, job] of Object.entries(needs)) console.log(`${name}: ${job.result}`);
+            const failed = Object.entries(needs).filter(([name, job]) => !passing(name, job.result));
+            if (failed.length > 0) {
+              console.error(`Jobs not passing: ${failed.map(([name]) => name).join(", ")}`);
+              process.exit(1);
+            }
+          '

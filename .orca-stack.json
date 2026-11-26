@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "modo": "multiagente",
+  "ramaBase": "main",
+  "agentes": {
+    "usa": ["pi", "agy", "codex"],
+    "preguntarAntes": []
+  },
+  "verificacion": {
+    "suite": "pnpm test",
+    "typecheck": "pnpm run typecheck"
+  },
+  "riesgo": [
+    "pnpm-lock.yaml",
+    "package.json",
+    "pnpm-workspace.yaml",
+    ".github/workflows/**",
+    "contracts/**",
+    "bin/**",
+    "scripts/install*",
+    "**/*permission*",
+    "**/migrations/**"
+  ],
+  "merge": "main merges on its own as soon as the merge condition of the contract holds",
+  "despliegue": {
+    "despues": false
+  },
+  "idioma": "English for code, comments, tests, commits and PRs (matches upstream, keeps upstream merges cheap)",
+  "lint": {
+    "enabled": false
+  },
+  "setup": "completo"
+}

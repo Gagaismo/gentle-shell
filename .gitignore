@@ -37,3 +37,5 @@ tmp/
 
 # Scratch directories written by the herdr activity tests
 odd/work/
+.orca-stack.local.json
+odd/

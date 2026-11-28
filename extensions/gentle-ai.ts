@@ -5034,7 +5034,7 @@ class RoutingTablePanel implements OverlayComponent {
 		const next = this.orcaStackState === "off" ? "on" : "off";
 		const error = control.write(next);
 		if (error === undefined) this.orcaStackState = next;
-		this.say(error ?? `orca-stack ${next} for this project: the next turn ${next === "off" ? "drops" : "loads"} the orca-stack contract.`);
+		this.say(error ?? `orca-stack ${next} for this project: the next turn ${next === "off" ? "drops the orca-stack contract" : "loads the orca-stack contract and, in the main checkout, MAIN.md's main cycle"}.`);
 	}
 
 	/** `c` drafts the shown profile's Controlled Engineering option; saving or using the profile commits it. */

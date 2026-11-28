@@ -21,7 +21,7 @@ import { agents, props, layout, hc, run, setShared, shared, theme, watchFolder, 
 import { readFile } from "fs/promises";
 import { sessionFileFor, readAfter, readTail, utf8 } from "./session.js";
 import { FeedSource, allSessions, targetSession, machineOf, liveState } from "./snapshot.js";
-import { createFeed, ingest, hideThinkingFrom } from "./feed.js";
+import { createFeed, ingest, hideThinkingFrom, hasTranscript } from "./feed.js";
 import { palette, sans, R } from "./tokens.js";
 import { header, entries, entry, lane, stateLabel, askCard, askOptions, composer, icon, PERM, ELSEWHERE } from "./ui.js";
 import { sendAction, errorText, safeKeys, terminalFree, tuiCommand, showTerminal, confirm, confirmed, readSnapshot } from "./actions.js";
@@ -43,6 +43,7 @@ const REQUEST_MS = 10000; // a palette request older than this is ignored (share
 const NO_COMMANDS = "Open that session's terminal to run /commands.";
 const KEPT = 30; // sessions whose opened rows are remembered when another session shows
 const DOUBLE_MS = 300; // one ⌘O that reaches both the chat's key and the layout's key toggles once
+const READ_FAILED = ["Cannot read this conversation", "Its session file could not be read. The chat tries again when the session updates."];
 
 // The composer's "/" menu: open while the draft is one "/word" (no space or line break yet).
 // Names that start with the word come first, then names and descriptions that contain it.
@@ -95,6 +96,10 @@ export default class GentleChat extends View {
     this.requesting = false;
     this.settingsDirs = new Set(); // the folders of the shown session's settings files, watched
     this.real = new Map(); // cwd -> real path, for sessionFileFor
+    // A session that publishes a feed without a Pi session file (another agent): there is no
+    // transcript this view can read, and falling back to the folder would show a different one.
+    this.foreign = false;
+    this.readFailed = false; // the last read of the session file failed (#3537): never shown as an empty conversation
     this.open = new Map(); // row id -> open, when flipped from its default (S11: per row, kept across reads)
     this.hunkAt = new Map(); // diff card id -> shown hunk
     this.kept = new Map(); // session file -> { open, hunkAt } of a session shown before
@@ -224,10 +229,28 @@ export default class GentleChat extends View {
     return targetSession(this.source.feeds, this.key);
   }
 
+  // The shown session follows the pick at once, before any await: Send, answers and actions go to
+  // it even while a refresh of the session shown before still reads.
   tick(cx) {
     this.want = this.pick();
     this.wantFeeds = this.source.feeds;
+    this.show(this.want, cx);
     cx.spawn(async (cx) => { await this.refreshNow(cx); });
+  }
+
+  // Makes `s` the shown session: its key, its Herdr terminal and its snapshot (where actions go).
+  show(s, cx) {
+    const key = s?.key ?? null;
+    const address = s?.terminal?.address ?? null;
+    if (key !== this.key) {
+      this.key = key;
+      this.cwd = s?.terminal?.cwd ?? s?.feed?.identity?.cwd ?? null;
+      this.dir = null;
+      this.reset(null);
+      this.setSnap(s?.feed ?? null);
+      cx.notify();
+    }
+    if (address !== this.address) { this.address = address; cx.notify(); }
   }
 
   // One refresh at a time; a call during one runs it again after, for the newest `want`.
@@ -254,28 +277,35 @@ export default class GentleChat extends View {
     const s = this.want;
     const key = s?.key ?? null;
     const address = s?.terminal?.address ?? null;
-    if (key !== this.key) {
-      this.key = key;
-      this.cwd = s?.terminal?.cwd ?? s?.feed?.identity?.cwd ?? null;
-      this.dir = null;
-      this.reset(null);
-      this.setSnap(null);
-      cx.notify();
-    }
-    if (address !== this.address) { this.address = address; cx.notify(); }
+    this.show(s, cx);
+    if (!s && this.foreign) { this.foreign = false; cx.notify(); }
     if (!s) return;
     // S14: a terminal on another machine. Its session file and snapshot are on that machine and the
     // desktop feed reads this computer's, so nothing is read (a local file of the same folder would
     // be another session): the empty state says where it runs, the Terminal shows it.
-    if (machineOf(address)) return;
+    // A remote terminal renders its own state, so a foreign flag from the previous session stops
+    // here; routine refreshes of the shown session must not clear it.
+    if (machineOf(address)) {
+      if (this.foreign) { this.foreign = false; this.dir = null; this.reset(null); cx.notify(); }
+      return;
+    }
     // The snapshot names the exact session file; a terminal without one falls back to its folder.
     const exact = s.feed?.identity?.sessionFile;
+    const foreign = Boolean(s.feed) && !hasTranscript(s.feed.identity);
+    if (foreign !== this.foreign) {
+      this.foreign = foreign;
+      // The same key can turn foreign (a feed that stops naming a Pi session file): drop the
+      // transcript read earlier, or it would sit beside the notice that we cannot read it.
+      if (foreign) { this.dir = null; this.reset(null); }
+      cx.notify();
+    }
     const where = typeof exact === "string" && exact.endsWith(".jsonl")
       ? { dir: exact.slice(0, Math.max(exact.lastIndexOf("/"), exact.lastIndexOf("\\"))), file: exact, feed: s.feed }
-      : s.terminal ? await sessionFileFor(s.terminal, this.real, this.wantFeeds) : null;
+      : foreign ? null : s.terminal ? await sessionFileFor(s.terminal, this.real, this.wantFeeds) : null;
     if (this.key !== key) return;
     if (this.setSnap(where?.feed ?? s.feed ?? null)) cx.notify();
     if (this.settingsOf !== key) await this.readSettings(s, cx);
+    if (this.key !== key) return;
     if (!where) return;
     if (where.dir !== this.dir) { this.dir = where.dir; this.watch(where.dir, cx); }
     if (where.file !== this.file) { this.reset(where.file); cx.notify(); }
@@ -375,6 +405,7 @@ export default class GentleChat extends View {
     this.limit = PAGE;
     this.stick = true;
     this.error = null;
+    this.readFailed = false;
   }
 
   // Watches the session folder. With the snapshot's exact file, only a write to that file reads
@@ -389,6 +420,7 @@ export default class GentleChat extends View {
           const paths = await watchFolder(dir);
           if (this.watched !== dir) break;
           const file = this.file;
+          if (this.foreign) { this.watched = null; return; } // nothing to read: the empty state already says why
           if (!file || typeof this.snap?.identity?.sessionFile !== "string") { await this.refreshNow(cx); continue; }
           const name = file.slice(file.lastIndexOf("/") + 1);
           if (!Array.isArray(paths) || paths.some((p) => p === file || p === dir || String(p).endsWith(`/${name}`))) await this.load(cx);
@@ -420,7 +452,8 @@ export default class GentleChat extends View {
 
   // Reads only the complete lines added since `pos` (a long session: first its tail, readTail).
   // The file only grows; if it shrank, start over. A big file is read through `sh`, which gives
-  // its size and only the new bytes; a small one is read whole and sliced (session.js).
+  // its size and only the new bytes; a small one is read whole and sliced (session.js). A read
+  // from the start that fails is shown as a failure; `pos` stays 0, so the next refresh reads again.
   async load(cx) {
     if (this.loading) { this.again = true; return; }
     this.loading = true;
@@ -434,7 +467,8 @@ export default class GentleChat extends View {
           const first = !this.feed.items.length;
           const t = await readTail(file, TAIL * this.back, LINES * this.back, TAIL_MAX * this.back);
           if (file !== this.file) return;
-          if (!t) continue;
+          if (!t) { this.readFailed = true; cx.notify(); continue; }
+          this.readFailed = false;
           const feed = createFeed();
           ingest(feed, t.text);
           this.feed = feed;
@@ -450,8 +484,10 @@ export default class GentleChat extends View {
         if (Number.isFinite(size)) this.size = size;
         if (text === null) {
           if (this.pos > 0) { this.reset(file); this.again = true; }
+          else { this.readFailed = true; cx.notify(); }
           continue;
         }
+        if (this.readFailed) { this.readFailed = false; cx.notify(); }
         if (text) {
           ingest(this.feed, text);
           this.pos = end;
@@ -917,6 +953,13 @@ export default class GentleChat extends View {
       const busy = live && (live.status === "working" || live.status === "waiting");
       if (working || busy) rows.push(lane(stateLabel(p, "work", busy ? live.label : "Working")));
     }
+    // A foreign session or a failed read can still have a status row; the explanation has to appear anyway.
+    if ((this.foreign || this.readFailed) && rows.length > 0) {
+      const [title, about] = this.foreign ? this.foreignText() : READ_FAILED;
+      rows.push(lane(v_flex().id("foreign").flex_none().self_center().items_center().px(28).py(24).gap(4)
+        .child(div().text_size(14).font_semibold().text_color(p.text).child(title))
+        .child(div().text_size(12.5).text_color(p.muted).text_center().child(about))));
+    }
     const empty = !rows.length;
     // Pinned to the newest entry: new items pin it, scrolling up unpins it. scroll_to_item
     // reveals a child with the least scroll, so the target is a 1px sentinel after the last row,
@@ -950,15 +993,32 @@ export default class GentleChat extends View {
 
   // No conversation yet (the artboard has no such state): a calm block in the middle of the
   // log, in the design's type: the mark in faint, a 14px semibold line, a 12.5px muted line.
-  empty(p) {
+  // The same words in the empty state and above any status row: a feed with no Pi session file
+  // cannot be read here, and where the session runs changes what the person can do about it.
+  foreignText() {
+    const where = this.address
+      ? "This view can only show its Terminal (⌘J)."
+      : "Open its terminal where it runs to follow the conversation.";
+    return ["No transcript for this session", `It publishes a desktop feed but no Pi session file. ${where}`];
+  }
+
+  emptyText() {
     const machine = machineOf(this.address);
-    const [title, about] = machine
+    return machine
       ? [`Runs on ${machine}`, `Herdr shows its state and its Terminal (⌘J). Its conversation and desktop feed stay on ${machine}: this window reads this computer's.`]
+      : this.foreign
+      ? this.foreignText()
       : !this.key
       ? ["No Gentle Shell session", "Start one with + in the tab bar, or run gentle-shell in a terminal."]
       : !this.file
         ? ["Waiting for the first message", "This session has not written its conversation yet."]
+        : this.readFailed
+        ? READ_FAILED
         : ["No messages yet", this.address ? "Type below to start. ⌘J shows the Terminal." : "Type below to start."];
+  }
+
+  empty(p) {
+    const [title, about] = this.emptyText();
     return v_flex().id("log").flex_1().min_h(0).items_center().justify_center().gap(6).px(28).pb(40)
       .on_mouse_down("left", () => this.focus.focus())
       .child(icon("mark", 26).text_color(p.faint).mb(4))

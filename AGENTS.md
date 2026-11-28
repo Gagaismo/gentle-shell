@@ -1,3 +1,5 @@
+# gentle-shell Agent Instructions
+
 <!-- orca-stack:begin -->
 ## Orca stack: contrato de trabajo
 

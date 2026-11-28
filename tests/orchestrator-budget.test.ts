@@ -50,6 +50,13 @@ const FIXTURE_PATH = join(import.meta.dirname, "fixtures", "orchestrator.pre-die
 // names a deployable backend/service, not an in-app class/module (verifier finding): 9,567 -> 9,598 B.
 // upstream v4.9.0 merge: both additions together (temp-dir exemption +170 B, architect trigger +421 B);
 // measured 9,768 B at the 128-char root.
+// gentle-shell#348 rebase (2026-11-16): the parent-inline skill-read duty clause (+49 B over its
+// original base) rides on the current 9,347 B baseline; measured below at the 128-char root.
+// review follow-up (2026-11-16): 9,396 B is the new pin for this candidate — the clause was
+// re-approved with the rebase in issues/348 (budget note, 2026-10-30); the previous 9,352 B cap
+// recorded above predates this candidate's clause and is superseded by this pin.
+// upstream v5.1.0 merge (Gagaismo/gentle-shell#9): upstream's 9,396 B pin plus the fork's architect trigger;
+// measured 9,766 B at the 128-char root, inside the fork's 9,768 B pin.
 const BUDGET_BYTES = 9768;
 const MIN_CONTROLLED_LONG_ASSETS_ROOT_CHARS = 93;
 
@@ -143,7 +150,7 @@ function measureOrchestratorPromptBytes(assetsDir: string): number {
 // measuring a shorter render again.
 const RDD_WORST_CASE_LINE = "Receipt-driven development: unknown (native status unavailable)";
 
-test("getOrchestratorPrompt return value stays within the canonical 9,197 B budget at a short assets root", () => {
+test("getOrchestratorPrompt return value stays within the canonical 9,396 B budget at a short assets root", () => {
 	const rendered = __testing.renderOrchestratorPrompt(representativeProductionAssetsDir);
 	assert.ok(
 		rendered.includes(RDD_WORST_CASE_LINE),

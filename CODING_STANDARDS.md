@@ -19,6 +19,6 @@ El único comentario permitido es un Decision Record que cita un ADR o un issue 
 
 ## La integración con Orca vive en archivos propios del fork
 
-Este repo es un fork de `Gentleman-Programming/gentle-shell`. La integración nativa con Orca vive en archivos propios del fork (`extensions/orca-*.ts`, `lib/orca-*`, `scripts/orca-*`) y toca el core de upstream solo en seams chicos, como el preflight de G1 o el consentimiento de G2, para que cada release de upstream siga siendo un merge barato. Un cambio que reparte lógica de Orca en archivos de upstream más allá de un seam lleva su razón en el cuerpo del PR.
+Este repo es un fork de `Gentleman-Programming/gentle-shell`. La integración nativa con Orca vive en archivos propios del fork (`extensions/orca-*.ts`, `lib/orca-*`, `scripts/orca-*`) y toca el core de upstream solo en seams chicos, como el consentimiento de G2, para que cada release de upstream siga siendo un merge barato. Un cambio que reparte lógica de Orca en archivos de upstream más allá de un seam lleva su razón en el cuerpo del PR.
 
 Fuente: orca-stack ADR 0006, punto 4.

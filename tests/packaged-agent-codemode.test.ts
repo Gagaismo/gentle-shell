@@ -29,6 +29,12 @@ const REVIEW_ACTOR_AGENTS = [
 	"review-readability.md",
 ] as const;
 
+/**
+ * Fork read-only specialists (Gagaismo/gentle-shell#9): no codemode, allowlist unchanged.
+ * gentle-ai-architect profiles the codebase and returns an ADR proposal; it never batches or acts.
+ */
+const READ_ONLY_SPECIALIST_AGENTS = ["gentle-ai-architect.md"] as const;
+
 const CODEMODE_TOOL = "codemode";
 
 function readDeclaredTools(file: string): string[] {
@@ -66,14 +72,24 @@ test("packaged read-only review actors keep a codemode-free allowlist", () => {
 	}
 });
 
+test("packaged read-only specialists keep a codemode-free allowlist", () => {
+	for (const file of READ_ONLY_SPECIALIST_AGENTS) {
+		const tools = readDeclaredTools(file);
+		assert.ok(
+			!tools.includes(CODEMODE_TOOL),
+			`${file} is a read-only specialist: ${CODEMODE_TOOL} must not widen its allowlist`,
+		);
+	}
+});
+
 test("every packaged agent is classified for codemode", () => {
-	const classified = new Set<string>([...CODEMODE_AGENTS, ...REVIEW_ACTOR_AGENTS]);
+	const classified = new Set<string>([...CODEMODE_AGENTS, ...REVIEW_ACTOR_AGENTS, ...READ_ONLY_SPECIALIST_AGENTS]);
 	const packaged = readdirSync(AGENTS_DIR).filter((entry) => entry.endsWith(".md"));
 	assert.ok(packaged.length > 0, "gentle-pi must ship packaged agents");
 	for (const file of packaged) {
 		assert.ok(
 			classified.has(file),
-			`${file} is not classified for ${CODEMODE_TOOL}: add it to CODEMODE_AGENTS or REVIEW_ACTOR_AGENTS`,
+			`${file} is not classified for ${CODEMODE_TOOL}: add it to CODEMODE_AGENTS, REVIEW_ACTOR_AGENTS or READ_ONLY_SPECIALIST_AGENTS`,
 		);
 	}
 });

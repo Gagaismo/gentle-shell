@@ -17,9 +17,12 @@ assert.ok(!("error" in worker));
 const verification = read("assets/orchestrator-verification.md");
 const quota = read("assets/orchestrator-quota-recovery.md");
 const fullDelegation = read("assets/orchestrator-full-delegation.md");
+// #9 budget note (upstream v5.1.0 merge into the fork): upstream's caps (organic 26,906 B, full-delegation
+// 30,400 B) plus the fork's orchestrator-verification.md item 6 (Suggestions) and orchestrator-full-delegation.md
+// mechanism 7 (Architect); measured 27,108 B organic and 31,006 B full-delegation, pinned at those sums.
 const modes = [
-	{ name: "organic", cap: 26_906, route: /fix inline if small and understood, or relaunch with changed scope, hypothesis or handoff plus new evidence/ },
-	{ name: "full-delegation", cap: 30_400, route: /never edit: launch a new bounded writer with the diagnosis, new evidence and changed scope or hypothesis/ },
+	{ name: "organic", cap: 27_108, route: /fix inline if small and understood, or relaunch with changed scope, hypothesis or handoff plus new evidence/ },
+	{ name: "full-delegation", cap: 31_006, route: /never edit: launch a new bounded writer with the diagnosis, new evidence and changed scope or hypothesis/ },
 ] as const;
 
 // Probe what the parent receives, not a model's adherence to the instructions.

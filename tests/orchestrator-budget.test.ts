@@ -150,7 +150,7 @@ function measureOrchestratorPromptBytes(assetsDir: string): number {
 // measuring a shorter render again.
 const RDD_WORST_CASE_LINE = "Receipt-driven development: unknown (native status unavailable)";
 
-test("getOrchestratorPrompt return value stays within the canonical 9,396 B budget at a short assets root", () => {
+test("getOrchestratorPrompt return value stays within the canonical 9,768 B budget at a short assets root", () => {
 	const rendered = __testing.renderOrchestratorPrompt(representativeProductionAssetsDir);
 	assert.ok(
 		rendered.includes(RDD_WORST_CASE_LINE),

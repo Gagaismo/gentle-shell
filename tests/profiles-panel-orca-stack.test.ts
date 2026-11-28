@@ -59,7 +59,9 @@ test("o flips the stored choice at once, both ways, and says what happens next",
 	assert.deepEqual(orca.writes, ["off"]);
 	assert.match(flipped, /o orca-stack: off/);
 	assert.match(flipped, /orca-stack off for this project/);
-	render(["o"], orca);
+	assert.match(render(["o"], control("on"), [], 200).join("\n"), /the next turn drops the orca-stack contract\./);
+	const back = render(["o"], orca, [], 200).join("\n");
+	assert.match(back, /orca-stack on for this project: the next turn loads the orca-stack contract and, in the main checkout, MAIN\.md's main cycle\./);
 	assert.deepEqual(orca.writes, ["off", "on"]);
 	assert.match(render([], orca).join("\n"), /o orca-stack: on/);
 });

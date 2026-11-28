@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { appendSystemPromptOnce, type AppendableSystemPromptOptions } from "./append-system-prompt.ts";
 import { findWorktreeRoot, orcaStackLocalPath, readOrcaStackChoice } from "./orca-stack-toggle.ts";
 
 export const MAIN_CYCLE_HEADING = "### Ciclo de `main`";
@@ -89,5 +90,36 @@ export function mainCycleInjection(cwd: string, event: unknown, env: NodeJS.Proc
 		return readMainCycleText(mainDocPath(env, home));
 	} catch {
 		return undefined;
+	}
+}
+
+// #13 A13: Pi loads ./extensions in unsorted readdirSync order, so either extension's before_agent_start may run
+// first. The appended block is recorded on the shared options object under a global symbol (each extension gets its
+// own module instance, moduleCache: false) so gentle-ai can move exactly that text after its orchestrator prompt.
+const MAIN_CYCLE_BLOCK = Symbol.for("gentle-shell#13.mainCycleBlock");
+
+type MainCycleOptions = AppendableSystemPromptOptions & { [MAIN_CYCLE_BLOCK]?: string };
+
+/** Appends the main-cycle block once and records it for keepMainCycleLast (#13 R1, R5). */
+export function appendMainCycle(options: AppendableSystemPromptOptions | null | undefined, text: string): void {
+	if (!options) return;
+	appendSystemPromptOnce(options, text);
+	Object.defineProperty(options, MAIN_CYCLE_BLOCK, { value: text, writable: true, configurable: true, enumerable: false });
+}
+
+/** Moves the recorded main-cycle block to the end of appendSystemPrompt; a no-op when absent. Never throws (#13 A13). */
+export function keepMainCycleLast(options: AppendableSystemPromptOptions | null | undefined): void {
+	try {
+		const text = (options as MainCycleOptions | null | undefined)?.[MAIN_CYCLE_BLOCK];
+		if (!options || typeof text !== "string" || text === "") return;
+		const current = options.appendSystemPrompt ?? "";
+		const at = current.indexOf(text);
+		if (at === -1 || at + text.length === current.length) return;
+		options.appendSystemPrompt = at === 0
+			? current.slice(text.length).replace(/^\n\n/, "")
+			: current.slice(0, at).replace(/\n\n$/, "") + current.slice(at + text.length);
+		appendSystemPromptOnce(options, text);
+	} catch {
+		// The prompt keeps its current order.
 	}
 }

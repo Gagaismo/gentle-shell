@@ -7,6 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { appendSystemPromptOnce, type AppendableSystemPromptOptions } from "../lib/append-system-prompt.ts";
 import { filterChildSessionContextFiles, type ContextFileOptions } from "../lib/child-context-files.ts";
 import { orcaStackPanelControl, type OrcaStackPanelControl } from "../lib/orca-stack-toggle.ts";
+import { keepMainCycleLast } from "../lib/orca-main-cycle.ts";
 import { dataArgumentRanges, recognizeDestructiveCommands } from "../lib/destructive-command-guard.ts";
 import { defaultTempScratchFs, isTempScratchRemoval, type TempScratchFs } from "../lib/yolo-temp-scratch.ts";
 import { SHELL_COMMAND_TOOLS } from "../lib/background-jobs.ts";
@@ -13337,6 +13338,9 @@ function createGentleAiExtensionForTesting(
 		const promptMode = isPrimarySession ? await yolo.mode(ctx) : "normal";
 		updateYoloPrompt(event.systemPromptOptions, promptMode === "yolo", promptMode === "super-yolo");
 		updateAutoPrompt(event.systemPromptOptions, promptMode === "auto");
+		// #13 A13: Pi does not sort ./extensions, so orca-stack.ts may append MAIN.md's cycle first;
+		// moving it last here keeps the contract after the orchestrator prompt in either load order.
+		keepMainCycleLast(event.systemPromptOptions);
 		return undefined;
 	});
 

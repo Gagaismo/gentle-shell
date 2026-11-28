@@ -1,14 +1,41 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import test, { after } from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import test, { after, before } from "node:test";
+import { ExtensionRunner, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createEventBus } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js";
+import { createExtensionRuntime, loadExtensionFromFactory } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
+import { createGentleAiExtension } from "../extensions/gentle-ai.ts";
 import { createOrcaStackExtension } from "../extensions/orca-stack.ts";
+import { appendMainCycle, keepMainCycleLast, mainCycleText } from "../lib/orca-main-cycle.ts";
 
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const scratch = mkdtempSync(join(tmpdir(), "gentle-pi-orca-main-cycle-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+const gentleAiHome = join(scratch, "gentle-ai-home");
+const gentleAiEnv: NodeJS.ProcessEnv = {
+	HOME: gentleAiHome, USERPROFILE: gentleAiHome,
+	GENTLE_PI_CONFIG_HOME: join(gentleAiHome, "config"),
+	GENTLE_PI_AGENT_HOME: join(gentleAiHome, "agents"),
+	PI_CODING_AGENT_DIR: join(gentleAiHome, "pi"),
+	XDG_CONFIG_HOME: join(gentleAiHome, "xdg"),
+};
+const previousEnvironment = new Map<string, string | undefined>();
+before(() => {
+	mkdirSync(gentleAiHome, { recursive: true });
+	for (const [key, value] of Object.entries(gentleAiEnv)) {
+		previousEnvironment.set(key, process.env[key]);
+		process.env[key] = value;
+	}
+});
+after(() => {
+	for (const [key, value] of previousEnvironment) {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
+	rmSync(scratch, { recursive: true, force: true });
+});
 let fixtureCount = 0;
 
 const CYCLE = "### Ciclo de `main`";
@@ -145,13 +172,94 @@ test("R5: two calls on the same options append the block once", async () => {
 	assert.equal(blocks(options.appendSystemPrompt), 1);
 });
 
-test("A13 (#13 ordering): gentle-ai.ts loads before orca-stack.ts, so the MAIN.md block lands after the orchestrator prompt", async () => {
-	const extensions = readdirSync(join(dirname(fileURLToPath(import.meta.url)), "..", "extensions")).filter((name) => name.endsWith(".ts")).sort();
-	assert.ok(extensions.indexOf("gentle-ai.ts") !== -1 && extensions.indexOf("gentle-ai.ts") < extensions.indexOf("orca-stack.ts"), extensions.join(","));
+const ORCH = "el Gentleman Identity and Harness";
+const ON_RUNNER_ORDERS = ["orca-stack first", "gentle-ai first"] as const;
+
+function gentleAiStub(pi: ExtensionAPI): void {
+	pi.on("before_agent_start", (event) => {
+		const opts = event.systemPromptOptions as { appendSystemPrompt: string };
+		opts.appendSystemPrompt = opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\nORCHESTRATOR PROMPT` : "ORCHESTRATOR PROMPT";
+		keepMainCycleLast(opts);
+	});
+}
+
+async function runnerPrompt(order: (typeof ON_RUNNER_ORDERS)[number], gentleAi: (pi: ExtensionAPI) => void, home: string, cwd: string): Promise<string> {
+	const runtime = createExtensionRuntime();
+	const eventBus = createEventBus();
+	const orca = await loadExtensionFromFactory(createOrcaStackExtension({}, { homedir: () => home }), cwd, eventBus, runtime, "extensions/orca-stack.ts");
+	const ai = await loadExtensionFromFactory(gentleAi, cwd, eventBus, runtime, "extensions/gentle-ai.ts");
+	const sessionManager = { getSessionId: () => `orca-main-cycle-${order}`, getBranch: () => [], getCwd: () => cwd };
+	const runner = new ExtensionRunner(order === "orca-stack first" ? [orca, ai] : [ai, orca], runtime, cwd, sessionManager as never, {} as never);
+	const errors: string[] = [];
+	runner.onError((error) => errors.push(`${error.extensionPath}: ${error.error}`));
+	const { systemPromptOptions } = await runner.emitBeforeAgentStart({} as never, { cwd, contextFiles: [], appendSystemPrompt: "" } as never);
+	assert.deepEqual(errors, [], "no handler failed");
+	return systemPromptOptions.appendSystemPrompt ?? "";
+}
+
+test("A13 (#13 ordering): Pi does not sort ./extensions, and the MAIN.md block lands after the orchestrator prompt in either load order", async () => {
+	const pkgMgr = readFileSync(join(repoRoot, "node_modules/@earendil-works/pi-coding-agent/dist/core/package-manager.js"), "utf8");
+	const collect = /function collectAutoExtensionEntries\(dir\)[\s\S]*?^}/m.exec(pkgMgr)?.[0] ?? "";
+	assert.ok(collect.includes("readdirSync"), "found collectAutoExtensionEntries");
+	assert.equal(collect.includes(".sort("), false, "load order is raw readdirSync order, so it is not guaranteed");
 	const { home, cwd } = fixture({ doc: mainMd() });
-	const text = await appended(handlerFor(home), cwd, "ORCHESTRATOR PROMPT");
-	assert.ok(text.startsWith("ORCHESTRATOR PROMPT\n\n"), text);
-	assert.ok(text.indexOf(CYCLE) > text.indexOf("ORCHESTRATOR PROMPT"));
+	const prompts = [];
+	for (const order of ON_RUNNER_ORDERS) {
+		const text = await runnerPrompt(order, gentleAiStub, home, cwd);
+		assert.ok(text.startsWith("ORCHESTRATOR PROMPT\n\n"), `${order}: ${text}`);
+		assert.ok(text.endsWith(SECTION), `${order}: the cycle is last`);
+		assert.equal(blocks(text), 1, order);
+		prompts.push(text);
+	}
+	assert.equal(prompts[0], prompts[1], "the same prompt in both orders");
+});
+
+test("A13 (#13 ordering): the real gentle-ai.ts moves the MAIN.md block after its orchestrator prompt in either load order", async () => {
+	const { home, cwd } = fixture({ doc: mainMd() });
+	const prompts = [];
+	for (const order of ON_RUNNER_ORDERS) {
+		const gentleAi = createGentleAiExtension({
+			nativeReviewCli: null,
+			processEnv: { ...gentleAiEnv, GENTLE_PI_AGENTS_CHILD: "0", GENTLE_AI_TELEMETRY: "0" },
+			resolveTelemetryTriggerBinary: () => join(scratch, "never-executed"),
+			telemetryTriggerSpawn: () => assert.fail("prompt fixtures must not spawn telemetry"),
+		});
+		const text = await runnerPrompt(order, gentleAi, home, cwd);
+		assert.ok(text.includes(ORCH), `${order}: orchestrator prompt present`);
+		assert.ok(text.indexOf(CYCLE) > text.indexOf(ORCH), `${order}: the cycle comes after the orchestrator prompt`);
+		assert.ok(text.endsWith(SECTION), `${order}: the cycle is the last block`);
+		assert.equal(blocks(text), 1, order);
+		prompts.push(text);
+	}
+	assert.equal(prompts[0], prompts[1], "the same prompt in both orders");
+});
+
+test("A13: keepMainCycleLast moves the recorded block (or the R4 line) to the end once, and is a no-op when absent", () => {
+	const absent = { appendSystemPrompt: "A\n\nB" };
+	keepMainCycleLast(absent);
+	assert.equal(absent.appendSystemPrompt, "A\n\nB", "no recorded block");
+	assert.doesNotThrow(() => { keepMainCycleLast(undefined); keepMainCycleLast(null); });
+	const block = mainCycleText(mainMd(), "/home/u/orca/stack/MAIN.md");
+	const errorLine = mainCycleText(undefined, "/home/u/orca/stack/MAIN.md");
+	assert.equal(errorLine.split("\n").length, 1);
+	for (const text of [block, errorLine]) {
+		for (const initial of ["", "BASE"]) {
+			const options = { appendSystemPrompt: initial };
+			appendMainCycle(options, text);
+			appendMainCycle(options, text);
+			options.appendSystemPrompt += "\n\nORCH\n\nYOLO";
+			keepMainCycleLast(options);
+			keepMainCycleLast(options);
+			const expected = [initial, "ORCH", "YOLO", text].filter(Boolean).join("\n\n");
+			assert.equal(options.appendSystemPrompt, expected, JSON.stringify(initial));
+			assert.deepEqual(Object.keys(options), ["appendSystemPrompt"], "the record is not enumerable");
+		}
+	}
+	const removed = { appendSystemPrompt: "" };
+	appendMainCycle(removed, block);
+	removed.appendSystemPrompt = "ORCH";
+	keepMainCycleLast(removed);
+	assert.equal(removed.appendSystemPrompt, "ORCH", "a block no longer present is not re-added");
 });
 
 test("PRESERVE: with the toggle off the contract blocks are still filtered and nothing is appended", async () => {

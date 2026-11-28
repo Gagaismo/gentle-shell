@@ -1,5 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AppendableSystemPromptOptions } from "../lib/append-system-prompt.ts";
 import type { ContextFileOptions } from "../lib/child-context-files.ts";
+import { appendMainCycle, mainCycleInjection } from "../lib/orca-main-cycle.ts";
 import {
 	filterOrcaStackContextFiles,
 	orcaStackLocalPath,
@@ -13,6 +15,9 @@ import {
 // git root has .orca-stack.json, a stored `"gentleShell": "off"` drops the
 // orca-stack contract blocks from every turn's injected context files (S3, S7);
 // the first interactive primary session with no stored choice asks once (S6).
+// On (or not chosen), a primary session in the main checkout also gets MAIN.md's
+// ### Ciclo de `main` section appended to its system prompt (#13 R1); gentle-ai.ts
+// moves it after the orchestrator prompt whatever the extension load order (#13 A13).
 // The toggle itself lives in /gentle:profiles (extensions/gentle-ai.ts).
 
 export const ORCA_STACK_QUESTION = "orca-stack in this project?";
@@ -30,7 +35,11 @@ interface HookContext {
 	};
 }
 
-export function createOrcaStackExtension(env: NodeJS.ProcessEnv = process.env): (pi: ExtensionAPI) => void {
+export interface OrcaStackExtensionOptions {
+	homedir?: () => string;
+}
+
+export function createOrcaStackExtension(env: NodeJS.ProcessEnv = process.env, options: OrcaStackExtensionOptions = {}): (pi: ExtensionAPI) => void {
 	return (pi) => {
 		// One question per project root per process, answered or dismissed.
 		const asked = new Set<string>();
@@ -68,8 +77,14 @@ export function createOrcaStackExtension(env: NodeJS.ProcessEnv = process.env): 
 			try {
 				if (pending !== undefined) await pending;
 				const cwd = (rawCtx as HookContext | undefined)?.cwd;
-				if (typeof cwd !== "string" || readOrcaStackChoice(cwd) !== "off") return undefined;
-				filterOrcaStackContextFiles((event as { systemPromptOptions?: ContextFileOptions | null } | undefined)?.systemPromptOptions);
+				if (typeof cwd !== "string") return undefined;
+				const systemPromptOptions = (event as { systemPromptOptions?: (ContextFileOptions & AppendableSystemPromptOptions) | null } | undefined)?.systemPromptOptions;
+				if (readOrcaStackChoice(cwd) === "off") {
+					filterOrcaStackContextFiles(systemPromptOptions);
+					return undefined;
+				}
+				const text = mainCycleInjection(cwd, event, env, options.homedir?.());
+				if (text !== undefined) appendMainCycle(systemPromptOptions, text);
 			} catch {
 				// Never throws; the original context files stay.
 			}
